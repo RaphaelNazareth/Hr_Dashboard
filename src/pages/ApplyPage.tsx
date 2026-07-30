@@ -106,6 +106,7 @@ export const ApplyPage: FC = () => {
 
   const [form, setForm] = useState<ApplicationForm>(emptyForm());
   const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [extracting, setExtracting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -148,6 +149,50 @@ export const ApplyPage: FC = () => {
         ? prev.skillsSelected.filter((s) => s !== skill)
         : [...prev.skillsSelected, skill],
     }));
+  }
+
+  async function handleResumeUpload(file: File | null) {
+    setResumeFile(file);
+    if (!file) return;
+
+    setExtracting(true);
+    setFormError(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("http://127.0.0.1:8000/api/extract-cv", {
+        method: "POST",
+        body,
+      });
+
+      if (!res.ok) throw new Error(`Server responded ${res.status}`);
+      const data = await res.json();
+
+      setForm((prev) => ({
+        ...prev,
+        First_Name: data.first_name ?? prev.First_Name,
+        Last_Name: data.last_name ?? prev.Last_Name,
+        Age: data.age != null ? String(data.age) : prev.Age,
+        email: data.email ?? prev.email,
+        Phone_Number: data.phone ?? prev.Phone_Number,
+        City: data.city ?? prev.City,
+        ExperienceYears:
+          data.work_experience_years != null
+            ? String(data.work_experience_years)
+            : prev.ExperienceYears,
+        Education: data.highest_education ?? prev.Education,
+        School: data.school_name ?? prev.School,
+        skillsOther: Array.isArray(data.skills) && data.skills.length
+          ? data.skills.join(", ")
+          : prev.skillsOther,
+        Former_Current_Mattel_Employee:
+          data.ex_mattel_employee ?? prev.Former_Current_Mattel_Employee,
+      }));
+    } catch (err) {
+      console.error("CV extraction failed", err);
+    } finally {
+      setExtracting(false);
+    }
   }
 
   function validate(): string | null {
@@ -455,12 +500,18 @@ export const ApplyPage: FC = () => {
                   id="Resume_Input"
                   type="file"
                   accept=".pdf,.doc,.docx,image/*"
-                  onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => handleResumeUpload(e.target.files?.[0] ?? null)}
                   className="cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/20"
                 />
                 {resumeFile && (
                   <p className="text-xs text-muted-foreground">
                     Selected: {resumeFile.name} ({(resumeFile.size / 1024).toFixed(0)} KB)
+                  </p>
+                )}
+                {extracting && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Reading your CV and filling the form…
                   </p>
                 )}
               </Field>
