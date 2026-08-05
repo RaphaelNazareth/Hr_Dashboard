@@ -5,8 +5,8 @@ import { Toaster } from 'sonner';
 import { ThemeProvider } from './components/ThemeProvider';
 import { FocusModeProvider } from './contexts/FocusModeContext';
 import { ScrollToTop } from './components/ScrollToTop';
-import { FloatingHelpButton } from './components/FloatingHelpButton';
 import { Dashboard } from './pages/Dashboard';
+import { AIAssistantWidget } from './components/FloatingHelpButton';
 import { ForYouPage } from './pages/ForYouPage';
 import { CompanyAnnouncementsPage } from './pages/CompanyAnnouncementsPage';
 import { KudosFeedPage } from './pages/KudosFeedPage';
@@ -118,7 +118,7 @@ const App: FC = () => {
           <BrowserRouter>
             <ScrollToTop />
             <AppRoutes />
-            <FloatingHelpButton />
+            <AIAssistantWidget />
             <Toaster />
           </BrowserRouter>
         </TooltipProvider>

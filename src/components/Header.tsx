@@ -40,7 +40,6 @@ export const Header: FC = () => {
     { path: '/candidates', label: 'Candidates', icon: Users },
     { path: '/recruitment-pipeline', label: 'Recruitment Pipeline', icon: Paperclip },
     { path: '/profiles', label: 'Profiles', icon: MessageSquare },
-    { path: '/skill-zone', label: 'Skill Zone', icon: Sparkles },
   ];
 
   // Recruitment Pipeline group
@@ -52,7 +51,7 @@ export const Header: FC = () => {
           <div className="flex items-center gap-6">
             <Link to="/" className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
-                N
+                <img src="/Mattel.svg" alt="Mattel" className="h-6 w-6" />
               </div>
               <span className="font-semibold text-lg">Mattel</span>
             </Link>

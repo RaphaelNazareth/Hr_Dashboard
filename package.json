@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "license": "MIT",
-  "author": "Praveen Sripati",
+  "author": "Raphael Nazareth",
   "description": "A comprehensive, modern intranet dashboard built with React, TypeScript, and Tailwind CSS",
   "scripts": {
     "dev": "vite",
@@ -37,9 +37,11 @@
     "radix-ui": "^1.6.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
     "react-organizational-chart": "^2.2.1",
     "react-router-dom": "^7.6.3",
     "recharts": "^3.1.0",
+    "remark-gfm": "^4.0.1",
     "sonner": "^2.0.6",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.11"

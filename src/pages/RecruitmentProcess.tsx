@@ -45,6 +45,8 @@ import {
   Mail,
   Phone,
   MapPin,
+  CalendarPlus,
+  Send,
   Search,
   Loader2,
   ArrowLeftRight,
@@ -182,6 +184,49 @@ function isInterviewStage(stageName: string) {
 
 // Writes one row to Candidate_Tracking — this is what feeds the History and
 // Interview tabs on the candidate's profile.
+function formatGCalDate(dateTimeLocal: string) {
+  // "2026-08-05T10:00" -> "20260805T100000"
+  return `${dateTimeLocal.replace(/[-:]/g, "")}00`;
+}
+
+function buildGoogleCalendarUrl(
+  candidate: OperatorRecord,
+  stageName: string,
+  startDateTime: string,
+  endTime: string,
+  notes: string
+) {
+  const title = encodeURIComponent(
+    `${stageName} - ${candidate.First_Name} ${candidate.Last_Name}`
+  );
+
+  const startLabel = new Date(startDateTime).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const details = encodeURIComponent(
+    notes || `Please attend the interview at ${startLabel}`
+  );
+
+  const datePart = startDateTime.split("T")[0];
+  const start = formatGCalDate(startDateTime);
+  const end = endTime
+    ? formatGCalDate(`${datePart}T${endTime}`)
+    : formatGCalDate(
+        new Date(new Date(startDateTime).getTime() + 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 16)
+      );
+
+  return (
+    `https://calendar.google.com/calendar/render?action=TEMPLATE` +
+    `&text=${title}` +
+    `&dates=${start}/${end}` +
+    `&details=${details}`
+  );
+}
+
 async function logTrackingEvent(params: {
   candidateId: string;
   position: string;
@@ -239,7 +284,7 @@ export const RecruitmentBoard: FC = () => {
   const pipelineScrollRef = useRef<HTMLDivElement>(null);
   const [scrollMax, setScrollMax] = useState(0);
   const [scrollValue, setScrollValue] = useState(0);
-
+  const [interviewEndTime, setInterviewEndTime] = useState("");
   function getVisibleCount(stageId: string) {
     return visibleCounts[stageId] ?? DEFAULT_VISIBLE_COUNT;
   }
@@ -396,8 +441,10 @@ export const RecruitmentBoard: FC = () => {
         // Hold off on the tracking entry until we know when the interview
         // is scheduled for.
         setInterviewDateTime("");
+        setInterviewEndTime("");
         setInterviewNotes("");
         setInterviewPrompt({ candidate: movingCandidate, stageName: destStage.name });
+        
       } else {
         logTrackingEvent({
           candidateId: movingCandidate.id,
@@ -413,47 +460,104 @@ export const RecruitmentBoard: FC = () => {
   }
 
   // -- Interview scheduling prompt -----------------------------------------
-
-  async function handleConfirmInterview(e: FormEvent) {
-    e.preventDefault();
-    if (!interviewPrompt) return;
-
-    setSchedulingInterview(true);
-    try {
-      await logTrackingEvent({
-        candidateId: interviewPrompt.candidate.id,
-        position: interviewPrompt.candidate.Applied_Position,
-        stage: interviewPrompt.stageName,
-        date: interviewDateTime
-          ? new Date(interviewDateTime).toISOString()
-          : new Date().toISOString(),
-        notes: interviewNotes.trim(),
-      });
-      setInterviewPrompt(null);
-    } catch (err) {
-      console.error("Failed to schedule interview", err);
-      setError("Couldn't save the interview time — please try again from the profile.");
-    } finally {
-      setSchedulingInterview(false);
-    }
+  function buildInterviewNotes(baseNotes: string) {
+    if (!interviewDateTime) return baseNotes;
+    const startLabel = new Date(interviewDateTime).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const timeRange = interviewEndTime ? `${startLabel}–${interviewEndTime}` : startLabel;
+    const rangeLine = `Time: ${timeRange}`;
+    return baseNotes ? `${rangeLine}\n${baseNotes}` : rangeLine;
   }
+  async function handleConfirmInterview(e: FormEvent) {
+  e.preventDefault();
+  if (!interviewPrompt) return;
 
-  function handleSkipInterviewTime() {
-    if (!interviewPrompt) return;
-    // Still log the stage change so history stays accurate, just without a
-    // specific scheduled time.
-    logTrackingEvent({
+  setSchedulingInterview(true);
+  try {
+    await logTrackingEvent({
       candidateId: interviewPrompt.candidate.id,
       position: interviewPrompt.candidate.Applied_Position,
       stage: interviewPrompt.stageName,
-      date: new Date().toISOString(),
-      notes: interviewNotes.trim(),
-    }).catch((err) => {
-      console.error("Failed to log tracking event", err);
-      setError("Couldn't record that stage change in the candidate's history.");
+      date: interviewDateTime
+        ? new Date(interviewDateTime).toISOString()
+        : new Date().toISOString(),
+      notes: buildInterviewNotes(interviewNotes.trim()),
     });
     setInterviewPrompt(null);
+  } catch (err) {
+    console.error("Failed to schedule interview", err);
+    setError("Couldn't save the interview time — please try again from the profile.");
+  } finally {
+    setSchedulingInterview(false);
   }
+}
+
+function handleSkipInterviewTime() {
+  if (!interviewPrompt) return;
+  logTrackingEvent({
+    candidateId: interviewPrompt.candidate.id,
+    position: interviewPrompt.candidate.Applied_Position,
+    stage: interviewPrompt.stageName,
+    date: interviewDateTime
+      ? new Date(interviewDateTime).toISOString()
+      : new Date().toISOString(),
+    notes: buildInterviewNotes(interviewNotes.trim()),
+  }).catch((err) => {
+    console.error("Failed to log tracking event", err);
+    setError("Couldn't record that stage change in the candidate's history.");
+  });
+  setInterviewPrompt(null);
+}
+const [sendingEmail, setSendingEmail] = useState(false);
+
+function handleAddToGoogleCalendar() {
+  if (!interviewPrompt || !interviewDateTime) return;
+  const { candidate, stageName } = interviewPrompt;
+
+  const url = buildGoogleCalendarUrl(
+    candidate,
+    stageName,
+    interviewDateTime,
+    interviewEndTime,
+    interviewNotes.trim()
+  );
+
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+async function handleSendInterviewEmail() {
+  if (!interviewPrompt) return;
+  const { candidate, stageName } = interviewPrompt;
+
+  if (!candidate.email) {
+    setError("Kandidat ini belum ada email-nya di database.");
+    return;
+  }
+
+  setSendingEmail(true);
+  try {
+    const res = await fetch("http://127.0.0.1:8000/api/send-interview-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: candidate.email,
+        candidateName: `${candidate.First_Name} ${candidate.Last_Name}`,
+        stageName,
+        startDateTime: interviewDateTime,
+        endTime: interviewEndTime,
+        notes: interviewNotes.trim(),
+      }),
+    });
+    if (!res.ok) throw new Error("Request failed");
+  } catch (err) {
+    console.error("Failed to email candidate", err);
+    setError("Gagal kirim email ke kandidat — kabari manual dulu ya.");
+  } finally {
+    setSendingEmail(false);
+  }
+}
 
   // -- Column management -------------------------------------------------
 
@@ -975,9 +1079,9 @@ export const RecruitmentBoard: FC = () => {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CalendarClock className="h-4 w-4" />
-              Schedule Interview
-            </DialogTitle>
+            <CalendarClock className="h-4 w-4 fill-white stroke-black" />
+            Schedule Interview
+          </DialogTitle>
             <DialogDescription>
               {interviewPrompt && (
                 <>
@@ -990,12 +1094,20 @@ export const RecruitmentBoard: FC = () => {
           </DialogHeader>
 
           <form onSubmit={handleConfirmInterview} className="space-y-4">
-            <Field label="Interview date & time" htmlFor="interviewDateTime">
+            <Field label="Start" htmlFor="interviewDateTime">
               <Input
                 id="interviewDateTime"
                 type="datetime-local"
                 value={interviewDateTime}
                 onChange={(e) => setInterviewDateTime(e.target.value)}
+              />
+            </Field>
+            <Field label="End time" htmlFor="interviewEndTime" hint="optional">
+              <Input
+                id="interviewEndTime"
+                type="time"
+                value={interviewEndTime}
+                onChange={(e) => setInterviewEndTime(e.target.value)}
               />
             </Field>
 
@@ -1009,20 +1121,46 @@ export const RecruitmentBoard: FC = () => {
               />
             </Field>
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleSkipInterviewTime}
-                disabled={schedulingInterview}
-              >
-                Skip for now
-              </Button>
-              <Button type="submit" className="gap-2" disabled={schedulingInterview}>
-                {schedulingInterview && <Loader2 className="h-4 w-4 animate-spin" />}
-                Save time
-              </Button>
-            </DialogFooter>
+           <DialogFooter className="flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={handleAddToGoogleCalendar}
+              disabled={!interviewDateTime}
+            >
+              <CalendarPlus className="h-4 w-4" />
+              Add to Google Calendar
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              onClick={handleSendInterviewEmail}
+              disabled={sendingEmail || !interviewPrompt?.candidate.email}
+            >
+              {sendingEmail ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              Email candidate
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleSkipInterviewTime}
+              disabled={schedulingInterview}
+            >
+              Skip for now
+            </Button>
+            <Button type="submit" className="gap-2" disabled={schedulingInterview}>
+              {schedulingInterview && <Loader2 className="h-4 w-4 animate-spin" />}
+              Save time
+            </Button>
+          </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

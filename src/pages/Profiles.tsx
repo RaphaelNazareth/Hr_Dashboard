@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState,useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Search,
@@ -40,6 +40,7 @@ import type { RecordModel } from 'pocketbase';
 const pb = new PocketBase(
   import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
 );
+pb.autoCancellation(false); // tambahin ini
 
 const TRACKING_COLLECTION = 'Candidate_Tracking';
 
@@ -232,15 +233,18 @@ export function ProfilesPage() {
   // Deep link from Candidates: fetch the exact record by id, drop it into the
   // list (in case it isn't among the current search results), select it, and
   // seed the search box with their name so it's visible in context.
+   const lastFetchedCandidateId = useRef<string | null>(null);  
   useEffect(() => {
     const candidateId = searchParams.get('candidateId');
     if (!candidateId) return;
-
+    if (lastFetchedCandidateId.current === candidateId) return;
+    lastFetchedCandidateId.current = candidateId;
     let cancelled = false;
 
     (async () => {
       try {
         const candidate = await pb.collection('Operator_dataset').getOne<Candidate>(candidateId);
+        
         if (cancelled) return;
 
         setCandidates((prev) => (prev.some((c) => c.id === candidate.id) ? prev : [candidate, ...prev]));
