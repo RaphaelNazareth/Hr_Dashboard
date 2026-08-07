@@ -2,48 +2,57 @@ import { Header } from '@/components/Header';
 import { PageWrapper } from '@/components/PageWrapper';
 import { useState, useEffect, useMemo, type FC } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import PocketBase from 'pocketbase';
+// import PocketBase from 'pocketbase';
 import { SlidersHorizontal, X } from 'lucide-react';
+import {
+  pb,
+  OPERATOR_COLLECTION,
+  DEFAULT_STAGE_NAMES,
+  moveCandidates,
+} from '@/lib/candidateBoard';
+import type { OperatorRecord } from '@/lib/candidateBoard';
 
-// ---------------------------------------------------------------------------
-// PocketBase client
-// ---------------------------------------------------------------------------
+// // ---------------------------------------------------------------------------
+// // PocketBase client
+// // ---------------------------------------------------------------------------
 
-const pb = new PocketBase(
-  import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
-);
-const OPERATOR_COLLECTION = 'Operator_dataset';
+// const pb = new PocketBase(
+//   import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
+// );
+// const OPERATOR_COLLECTION = 'Operator_dataset';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-export interface OperatorRecord {
-  // PocketBase System Fields
-  id: string;
-  created: string;
-  updated: string;
+export type { OperatorRecord };
 
-  // Custom Fields from Operator_dataset
-  Candidate_ID: string;
-  First_Name: string;
-  Last_Name: string;
-  Age: number;
-  email: string;
-  Phone_Number: string;
-  City: string;
-  Applied_Position: string;
-  Experience: string; // e.g., "1-3 years"
-  Education: string;  // e.g., "High School", "Bachelor's"
-  School: string;
-  Skills: string;     // e.g., "Excel"
-  Resume_Input: string;
-  Notice_Period: string; // e.g., "Immediate", "1 Month"
-  Status: string;     // e.g., "Applied", "psychotest"
-  Is_18_Plus: boolean;
-  Legal_Right_To_Work: boolean;
-  Former_Current_Mattel_Employee: boolean;
-  date: string;
-}
+// export interface OperatorRecord {
+//   // PocketBase System Fields
+//   id: string;
+//   created: string;
+//   updated: string;
+
+//   // Custom Fields from Operator_dataset
+//   Candidate_ID: string;
+//   First_Name: string;
+//   Last_Name: string;
+//   Age: number;
+//   email: string;
+//   Phone_Number: string;
+//   City: string;
+//   Applied_Position: string;
+//   Experience: string; // e.g., "1-3 years"
+//   Education: string;  // e.g., "High School", "Bachelor's"
+//   School: string;
+//   Skills: string;     // e.g., "Excel"
+//   Resume_Input: string;
+//   Notice_Period: string; // e.g., "Immediate", "1 Month"
+//   Status: string;     // e.g., "Applied", "psychotest"
+//   Is_18_Plus: boolean;
+//   Legal_Right_To_Work: boolean;
+//   Former_Current_Mattel_Employee: boolean;
+//   date: string;
+// }
 
 // Updated Sort Keys matching exact dataset column names
 export type SortKey =
@@ -51,6 +60,7 @@ export type SortKey =
   | 'Age'
   | 'City'
   | 'Applied_Position'
+  | 'Experience'
   | 'Notice_Period'
   | 'Status'
   | 'date'
@@ -134,6 +144,10 @@ export const Candidates: FC = () => {
   const [ageMax, setAgeMax] = useState<string>('');
   const [mattelFilter, setMattelFilter] = useState<TriState>('all');
   const [noticePeriodFilter, setNoticePeriodFilter] = useState<string>('all');
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStageTarget, setBulkStageTarget] = useState<string>(DEFAULT_STAGE_NAMES[0]);
+  const [bulkMoving, setBulkMoving] = useState(false);
 
   const [showFilters, setShowFilters] = useState(false);
 
@@ -305,7 +319,53 @@ export const Candidates: FC = () => {
 
   useEffect(() => {
     setPage(1);
+    setSelectedIds(new Set());
   }, [search, statusFilter, positionFilter, cityFilter, educationFilter, noticePeriodFilter, ageMin, ageMax, mattelFilter]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectPage() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      paged.forEach((r) => next.add(r.id));
+      return next;
+    });
+  }
+
+  function selectAllFiltered() {
+    setSelectedIds(new Set(filtered.map((r) => r.id)));
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulkMove() {
+    if (selectedIds.size === 0) return;
+    setBulkMoving(true);
+    setError(null);
+    try {
+      const toMove = records.filter((r) => selectedIds.has(r.id));
+      const { succeeded, failed } = await moveCandidates(toMove, bulkStageTarget);
+      if (succeeded.length) {
+        const succeededById = new Map(succeeded.map((r) => [r.id, r]));
+        setRecords((prev) => prev.map((r) => succeededById.get(r.id) ?? r));
+      }
+      if (failed.length) {
+        setError(`Couldn't move ${failed.length} candidate(s). Please try again.`);
+      }
+    } finally {
+      setSelectedIds(new Set());
+      setBulkMoving(false);
+    }
+  }
 
   const handleSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -461,6 +521,50 @@ export const Candidates: FC = () => {
           </div>
         )}
 
+        {selectedIds.size > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border bg-primary/5 px-3 py-2">
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+
+            <button
+              onClick={selectPage}
+              className="rounded-md border bg-card px-2.5 py-1 text-xs hover:bg-muted/40"
+            >
+              Select Page
+            </button>
+            <button
+              onClick={selectAllFiltered}
+              className="rounded-md border bg-card px-2.5 py-1 text-xs hover:bg-muted/40"
+            >
+              Select All Matching Filters ({filtered.length})
+            </button>
+
+            <select
+              value={bulkStageTarget}
+              onChange={(e) => setBulkStageTarget(e.target.value)}
+              className="ml-auto rounded-md border bg-background px-2.5 py-1.5 text-sm"
+            >
+              {DEFAULT_STAGE_NAMES.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+
+            <button
+              onClick={handleBulkMove}
+              disabled={bulkMoving}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
+            >
+              {bulkMoving ? 'Moving…' : 'Move'}
+            </button>
+
+            <button
+              onClick={clearSelection}
+              className="rounded-md border px-2.5 py-1 text-xs hover:bg-muted/40"
+            >
+              Clear Selection
+            </button>
+          </div>
+        )}
+
         {/* Filter panel — collapsed by default to keep the UI clean */}
         {showFilters && (
           <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -578,6 +682,9 @@ export const Candidates: FC = () => {
             <table className="w-full border-collapse text-sm">
               <thead className="border-b bg-muted/40">
                 <tr>
+                  <th className="w-8 px-3 py-2">
+                    <span className="sr-only">Select</span>
+                  </th>
                   <SortHeader label="Name" sortKeyName="First_Name" />
                   <SortHeader label="Age" sortKeyName="Age" />
                   <SortHeader label="City" sortKeyName="City" />
@@ -611,20 +718,20 @@ export const Candidates: FC = () => {
                 {loading ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={i} className="border-b last:border-0">
-                      <td colSpan={14} className="px-3 py-3">
+                      <td colSpan={15} className="px-3 py-3">
                         <div className="h-4 w-full animate-pulse rounded bg-muted" />
                       </td>
                     </tr>
                   ))
                 ) : error ? (
                   <tr>
-                    <td colSpan={14} className="px-3 py-8 text-center text-sm text-rose-500">
+                    <td colSpan={15} className="px-3 py-8 text-center text-sm text-rose-500">
                       {error}
                     </td>
                   </tr>
                 ) : paged.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    <td colSpan={15} className="px-3 py-8 text-center text-sm text-muted-foreground">
                       No candidates match your filters.
                     </td>
                   </tr>
@@ -635,6 +742,15 @@ export const Candidates: FC = () => {
                       onClick={() => goToProfile(r.id)}
                       className="cursor-pointer border-b last:border-0 hover:bg-muted/30"
                     >
+                      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleSelected(r.id)}
+                          className="h-4 w-4 rounded border-input accent-primary"
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-medium">{`${r.First_Name || ''} ${r.Last_Name || ''}`.trim() || r.id}</td>
                       <td className="whitespace-nowrap px-3 py-2 font-medium">{`${r.First_Name || ''} ${r.Last_Name || ''}`.trim() || r.id}</td>
                       <td className="whitespace-nowrap px-3 py-2 tabular-nums">{r.Age ?? '—'}</td>
                       <td className="whitespace-nowrap px-3 py-2">{r.City || '—'}</td>

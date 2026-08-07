@@ -7,7 +7,6 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
-import PocketBase from "pocketbase";
 import {
   DragDropContext,
   Droppable,
@@ -53,68 +52,29 @@ import {
   CalendarClock,
   SlidersHorizontal,
 } from "lucide-react";
+import {
+  pb,
+  OPERATOR_COLLECTION,
+  TRACKING_COLLECTION,
+  DEFAULT_STAGE_NAMES,
+  isInterviewStage,
+  logTrackingEvent,
+  matchesCandidateSearch,
+  moveCandidates,
+} from "@/lib/candidateBoard";
+import type { OperatorRecord } from "@/lib/candidateBoard";
 
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
 
-const pb = new PocketBase(
-  import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
-);
-pb.autoCancellation(false);
-
-const OPERATOR_COLLECTION = "Operator_dataset";
-const TRACKING_COLLECTION = "Candidate_Tracking";
-
 const UNASSIGNED_ID = "__unassigned__";
-
-interface OperatorRecord {
-  id: string;
-  created: string;
-  updated: string;
-
-  Candidate_ID: string;
-  First_Name: string;
-  Last_Name: string;
-  Age: number;
-  email: string;
-  Phone_Number: string;
-  City: string;
-  Applied_Position: string;
-  Experience: string;
-  Education: string;
-  School: string;
-  Skills: string;
-  Resume_Input: string;
-  Notice_Period: string;
-  Status: string;
-  Is_18_Plus: boolean;
-  Legal_Right_To_Work: boolean;
-  Former_Current_Mattel_Employee: boolean;
-  date: string;
-}
 
 interface Stage {
   id: string;
   name: string;
   order: number;
 }
-
-// Stages are a fixed set — columns can only be created from this list.
-const DEFAULT_STAGE_NAMES = [
-  "Applied",
-  "CV Screening",
-  "Phone Screening",
-  "Psychotest",
-  "FGD",
-  "Interview HR",
-  "Interview User",
-  "Interview Manager",
-  "MCU",
-  "Offering",
-  "Hired",
-  "Rejected",
-];
 
 function buildDefaultStages(): Stage[] {
   return DEFAULT_STAGE_NAMES.map((name, i) => ({
@@ -178,11 +138,6 @@ interface InterviewPrompt {
   stageName: string;
 }
 
-// Any stage whose name contains "interview" triggers the scheduling prompt.
-function isInterviewStage(stageName: string) {
-  return stageName.toLowerCase().includes("interview");
-}
-
 // Writes one row to Candidate_Tracking — this is what feeds the History and
 // Interview tabs on the candidate's profile.
 function formatGCalDate(dateTimeLocal: string) {
@@ -226,22 +181,6 @@ function buildGoogleCalendarUrl(
     `&dates=${start}/${end}` +
     `&details=${details}`
   );
-}
-
-async function logTrackingEvent(params: {
-  candidateId: string;
-  position: string;
-  stage: string;
-  date: string; // ISO datetime
-  notes?: string;
-}) {
-  await pb.collection(TRACKING_COLLECTION).create({
-    candidate_id: params.candidateId,
-    Applied_Position: params.position,
-    Stage: params.stage,
-    Date: params.date,
-    Notes: params.notes ?? "",
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +236,34 @@ export const RecruitmentBoard: FC = () => {
   const [scrollMax, setScrollMax] = useState(0);
   const [scrollValue, setScrollValue] = useState(0);
   const [interviewEndTime, setInterviewEndTime] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Bulk selection state — shared across every stage.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStageTarget, setBulkStageTarget] = useState<string>(DEFAULT_STAGE_NAMES[0]);
+  const [bulkMoving, setBulkMoving] = useState(false);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectManyInColumn(ids: string[]) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
   function getVisibleCount(stageId: string) {
     return visibleCounts[stageId] ?? DEFAULT_VISIBLE_COUNT;
   }
@@ -535,6 +502,42 @@ export const RecruitmentBoard: FC = () => {
     }
   }
 
+  // -- Bulk move -----------------------------------------------------------
+
+  async function handleBulkMove() {
+    if (selectedIds.size === 0) return;
+
+    setBulkMoving(true);
+    setError(null);
+
+    try {
+      const toMove = allCandidates.filter((c) => selectedIds.has(c.id));
+      const { succeeded, failed } = await moveCandidates(toMove, bulkStageTarget);
+
+      if (succeeded.length) {
+        const succeededById = new Map(succeeded.map((r) => [r.id, r]));
+        const destStage = orderedStages.find((s) => s.name === bulkStageTarget);
+        const destId = destStage ? destStage.id : UNASSIGNED_ID;
+
+        setColumns((prev) => {
+          const next: Record<string, OperatorRecord[]> = {};
+          for (const [stageId, list] of Object.entries(prev)) {
+            next[stageId] = list.filter((c) => !succeededById.has(c.id));
+          }
+          next[destId] = [...succeeded, ...(next[destId] ?? [])];
+          return next;
+        });
+      }
+
+      if (failed.length) {
+        setError(`Couldn't move ${failed.length} candidate(s). Please try again.`);
+      }
+    } finally {
+      setSelectedIds(new Set());
+      setBulkMoving(false);
+    }
+  }
+
   // -- Interview scheduling prompt -----------------------------------------
   function buildInterviewNotes(baseNotes: string) {
     if (!interviewDateTime) return baseNotes;
@@ -586,7 +589,6 @@ function handleSkipInterviewTime() {
   });
   setInterviewPrompt(null);
 }
-const [sendingEmail, setSendingEmail] = useState(false);
 
 function handleAddToGoogleCalendar() {
   if (!interviewPrompt || !interviewDateTime) return;
@@ -848,6 +850,30 @@ async function handleSendInterviewEmail() {
           <StatCard icon={ClipboardList} label="Hired" value={hiredCount} sub="Successfully onboarded" />
         </div>
 
+        {/* Bulk selection toolbar */}
+        {selectedIds.size > 0 && (
+          <div className="mb-4 mt-6 flex flex-wrap items-center gap-2 rounded-lg border bg-primary/5 px-3 py-2">
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            <select
+              value={bulkStageTarget}
+              onChange={(e) => setBulkStageTarget(e.target.value)}
+              className="ml-auto rounded-md border bg-background px-2.5 py-1.5 text-sm"
+            >
+              {DEFAULT_STAGE_NAMES.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <Button onClick={handleBulkMove} disabled={bulkMoving} size="sm">
+              {bulkMoving ? "Moving…" : "Move"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={clearSelection}>
+              Clear Selection
+            </Button>
+          </div>
+        )}
+
         {/* Pipeline */}
         <Card className="mt-8">
           <CardHeader>
@@ -1037,6 +1063,9 @@ async function handleSendInterviewEmail() {
                       onSearchChange={(v) => setSearch(UNASSIGNED_ID, v)}
                       onOpenCandidate={openCandidateProfile}
                       filters={columnFilters}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelected}
+                      onSelectAll={selectManyInColumn}
                     />
                   )}
 
@@ -1054,6 +1083,9 @@ async function handleSendInterviewEmail() {
                       onSearchChange={(v) => setSearch(stage.id, v)}
                       onOpenCandidate={openCandidateProfile}
                       filters={columnFilters}
+                      selectedIds={selectedIds}
+                      onToggleSelect={toggleSelected}
+                      onSelectAll={selectManyInColumn}
                     />
                   ))}
 
@@ -1478,6 +1510,10 @@ interface StageColumnProps {
     ageMin: string;
     ageMax: string;
   };
+
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onSelectAll: (ids: string[]) => void;
 }
 
 const StageColumn: FC<StageColumnProps> = ({
@@ -1493,20 +1529,16 @@ const StageColumn: FC<StageColumnProps> = ({
   onSearchChange,
   onOpenCandidate,
   filters,
+  selectedIds,
+  onToggleSelect,
+  onSelectAll,
 }) => {
   const filteredCandidates = useMemo(() => {
-    const query = searchValue.trim().toLowerCase();
     const minAge = filters.ageMin.trim() ? Number(filters.ageMin) : null;
     const maxAge = filters.ageMax.trim() ? Number(filters.ageMax) : null;
 
     return candidates.filter((c) => {
-      const matchesSearch =
-        !query ||
-        [c.First_Name, c.Last_Name, c.Applied_Position, c.City, c.email, c.Skills, c.Phone_Number]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(query);
+      const matchesSearch = matchesCandidateSearch(c, searchValue);
 
       const matchesPosition = filters.position === "all" || c.Applied_Position === filters.position;
       const matchesCity = filters.city === "all" || c.City === filters.city;
@@ -1559,14 +1591,24 @@ const StageColumn: FC<StageColumnProps> = ({
         )}
       </div>
 
-      <div className="relative mb-2">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={searchValue}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search candidates…"
-          className="h-8 pl-8 text-sm"
-        />
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchValue}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search candidates…"
+            className="h-8 pl-8 text-sm"
+          />
+        </div>
+        {filteredCandidates.length > 0 && (
+          <button
+            onClick={() => onSelectAll(filteredCandidates.map((c) => c.id))}
+            className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:underline"
+          >
+            Select all
+          </button>
+        )}
       </div>
 
       <Droppable droppableId={stage.id}>
@@ -1591,18 +1633,23 @@ const StageColumn: FC<StageColumnProps> = ({
                   <div
                     ref={dragProvided.innerRef}
                     {...dragProvided.draggableProps}
-                    {...dragProvided.dragHandleProps}
                     className={cn(dragSnapshot.isDragging && "opacity-90")}
                   >
                     {viewMode === "card" ? (
                       <CandidateCard
                         candidate={candidate}
                         onOpen={() => onOpenCandidate(candidate)}
+                        dragHandleProps={dragProvided.dragHandleProps ?? undefined}
+                        selected={selectedIds.has(candidate.id)}
+                        onToggleSelect={() => onToggleSelect(candidate.id)}
                       />
                     ) : (
                       <CandidateListItem
                         candidate={candidate}
                         onOpen={() => onOpenCandidate(candidate)}
+                        dragHandleProps={dragProvided.dragHandleProps ?? undefined}
+                        selected={selectedIds.has(candidate.id)}
+                        onToggleSelect={() => onToggleSelect(candidate.id)}
                       />
                     )}
                   </div>
@@ -1634,10 +1681,13 @@ const StageColumn: FC<StageColumnProps> = ({
   );
 };
 
-const CandidateCard: FC<{ candidate: OperatorRecord; onOpen: () => void }> = ({
-  candidate,
-  onOpen,
-}) => {
+const CandidateCard: FC<{
+  candidate: OperatorRecord;
+  onOpen: () => void;
+  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
+  selected: boolean;
+  onToggleSelect: () => void;
+}> = ({ candidate, onOpen, dragHandleProps, selected, onToggleSelect }) => {
   const skills = candidate.Skills
     ? candidate.Skills.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
@@ -1650,13 +1700,27 @@ const CandidateCard: FC<{ candidate: OperatorRecord; onOpen: () => void }> = ({
       onKeyDown={(e) => {
         if (e.key === "Enter") onOpen();
       }}
-      className="cursor-grab rounded-lg border bg-background p-3 shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/40 active:cursor-grabbing"
+      className={cn(
+        "rounded-lg border bg-background p-3 shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/40",
+        selected && "border-primary/50 bg-primary/5"
+      )}
     >
       <div className="mb-1 flex items-start justify-between gap-2">
-        <p className="font-medium leading-tight">
-          {candidate.First_Name} {candidate.Last_Name}
-        </p>
-        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="flex min-w-0 items-center gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 shrink-0 rounded border-input accent-primary"
+          />
+          <p className="truncate font-medium leading-tight">
+            {candidate.First_Name} {candidate.Last_Name}
+          </p>
+        </div>
+        <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing">
+          <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </div>
       </div>
       <p className="text-sm text-muted-foreground">{candidate.Applied_Position}</p>
 
@@ -1696,10 +1760,13 @@ const CandidateCard: FC<{ candidate: OperatorRecord; onOpen: () => void }> = ({
   );
 };
 
-const CandidateListItem: FC<{ candidate: OperatorRecord; onOpen: () => void }> = ({
-  candidate,
-  onOpen,
-}) => (
+const CandidateListItem: FC<{
+  candidate: OperatorRecord;
+  onOpen: () => void;
+  dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
+  selected: boolean;
+  onToggleSelect: () => void;
+}> = ({ candidate, onOpen, dragHandleProps, selected, onToggleSelect }) => (
   <div
     onClick={onOpen}
     role="button"
@@ -1707,9 +1774,21 @@ const CandidateListItem: FC<{ candidate: OperatorRecord; onOpen: () => void }> =
     onKeyDown={(e) => {
       if (e.key === "Enter") onOpen();
     }}
-    className="flex cursor-grab items-center gap-3 rounded-lg border bg-background px-3 py-2 shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/40 active:cursor-grabbing"
+    className={cn(
+      "flex items-center gap-3 rounded-lg border bg-background px-3 py-2 shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/40",
+      selected && "border-primary/50 bg-primary/5"
+    )}
   >
-    <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+    <input
+      type="checkbox"
+      checked={selected}
+      onChange={onToggleSelect}
+      onClick={(e) => e.stopPropagation()}
+      className="h-4 w-4 shrink-0 rounded border-input accent-primary"
+    />
+    <div {...dragHandleProps} className="shrink-0 cursor-grab active:cursor-grabbing">
+      <GripVertical className="h-4 w-4 text-muted-foreground" />
+    </div>
     <div className="min-w-0 flex-1">
       <p className="truncate text-sm font-medium">
         {candidate.First_Name} {candidate.Last_Name}
