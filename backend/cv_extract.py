@@ -1,22 +1,3 @@
-"""
-cv_text_extract.py
-
-Extracts clean, readable text from a CV/resume PDF -- nothing more.
-
-This is deliberately "dumb" on purpose: no section segmentation, no name
-guessing, no regex field extraction. Those are semantic-understanding
-problems better handled by an LLM (e.g. Gemini) downstream. This script's
-only job is: get the best possible raw text out of a PDF, whether it's a
-native-text PDF or a scanned/image-based one, and lightly clean it up
-without destroying the document's original structure (line breaks,
-paragraph spacing, bullet points) -- that structure is itself a signal an
-LLM can use to understand where one section/job entry ends and another
-begins.
-
-Usage:
-    python cv_text_extract.py path/to/cv.pdf
-"""
-
 from __future__ import annotations
 
 import re
@@ -280,7 +261,6 @@ INDONESIAN_CITIES = [
 
 # --- API Key -----------------------------------------------------------
 
-
 load_dotenv()
 client = genai.Client(
     api_key=os.environ["GEMINI_API_KEY"]
@@ -293,18 +273,6 @@ def _ocr_page_image(pil_image: Image.Image) -> str:
 
 
 def _split_columns(run_blocks, content_x0, content_x1):
-    """
-    Given a run of blocks that share roughly the same vertical territory
-    (no full-width block among them), detect whether they actually form
-    two side-by-side columns and, if so, split them.
-
-    Detection method: look at the gaps between each block's right edge
-    and the next block's left edge (sorted by x0). If the largest such
-    gap comfortably exceeds normal word/line spacing (MIN_COLUMN_GAP_RATIO
-    of the content width), treat that gap as the gutter between columns.
-    Otherwise, there's no reliable column signal -- return everything as
-    a single "column" so single-column CVs pass through unchanged.
-    """
     content_width = content_x1 - content_x0
     min_gap = content_width * MIN_COLUMN_GAP_RATIO
 
@@ -326,9 +294,6 @@ def _split_columns(run_blocks, content_x0, content_x1):
     left = [b for b in run_blocks if b[0] < best_boundary]
     right = [b for b in run_blocks if b[0] >= best_boundary]
 
-    # Sanity check: a genuine two-column layout should have blocks in
-    # both halves. If one side is empty, the "gap" was probably just
-    # ragged-right spacing in a single column, not a real gutter.
     if not left or not right:
         return [run_blocks]
 
@@ -336,29 +301,6 @@ def _split_columns(run_blocks, content_x0, content_x1):
 
 
 def _reading_order_text(page) -> str:
-    """
-    Reconstructs reading order for potentially multi-column pages.
-
-    PyMuPDF's default page.get_text() follows the PDF's internal content
-    stream / block layout order, which breaks down for column layouts
-    (sidebar CVs, two-column resumes, etc.): header text from different
-    columns at similar heights gets interleaved, and text objects placed
-    out of visual order (common in design-tool exports like Canva) get
-    scrambled.
-
-    Approach:
-      1. Pull blocks with bounding boxes.
-      2. Walk through them top-to-bottom, grouping consecutive blocks into
-         "runs" -- a run breaks whenever a full-width block (spanning
-         most of the page, e.g. a name banner) is encountered, since that
-         naturally divides the page into rows.
-      3. Within each run, detect a left/right column split by looking for
-         a clear horizontal gutter between blocks' x-positions.
-      4. Emit each run's columns left-to-right, each column top-to-bottom.
-
-    Single-column pages have no detectable gutter, so they fall through
-    to plain top-to-bottom order -- identical to the previous behavior.
-    """
     blocks = [b for b in page.get_text("blocks") if b[6] == 0 and b[4].strip()]
     if not blocks:
         return ""
@@ -393,20 +335,6 @@ def _reading_order_text(page) -> str:
 
 
 def get_raw_text(file_path: str | Path) -> str:
-    """
-    Returns the full document text. Each page is extracted natively if it
-    has a real text layer (fast, accurate, column-aware); otherwise it's
-    rasterized and OCR'd (for scanned pages/documents). A PDF can mix both
-    -- each page is checked independently, so e.g. a scanned signature
-    page in an otherwise native-text CV is still handled correctly.
-
-    NOTE: the OCR fallback path does not currently do column reconstruction
-    (pytesseract's plain image_to_string reads top-to-bottom across the
-    full image width). If scanned/photographed multi-column CVs turn out
-    to be common, that path can be upgraded using pytesseract's
-    image_to_data output, which provides per-word/per-block bounding
-    boxes the same way PyMuPDF's blocks do here.
-    """
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(path)
@@ -434,13 +362,6 @@ def get_raw_text(file_path: str | Path) -> str:
 # --- Step 2: light preprocessing ----------------------------------------
 
 def clean_text(text: str) -> str:
-    """
-    Light cleanup only -- no parsing, no reordering, no section detection.
-    Goal: remove noise that's clearly an artifact of OCR/PDF extraction,
-    while preserving the document's original structure (line breaks,
-    blank-line spacing between entries, bullet points) since that
-    structure is itself useful signal for an LLM reading the text later.
-    """
     # Normalize unicode: fixes ligatures (e.g. "ﬁ" -> "fi"), smart quotes,
     # and other visually-identical-but-differently-encoded characters.
     text = unicodedata.normalize("NFKC", text)

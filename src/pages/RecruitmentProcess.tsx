@@ -51,6 +51,7 @@ import {
   Loader2,
   ArrowLeftRight,
   CalendarClock,
+  SlidersHorizontal,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -265,6 +266,17 @@ export const RecruitmentBoard: FC = () => {
   // Per-column search queries, keyed by stage id (UNASSIGNED_ID included).
   const [columnSearch, setColumnSearch] = useState<Record<string, string>>({});
 
+  // Global filters — apply across every column at once, on top of the
+  // per-column search above.
+  const [showFilters, setShowFilters] = useState(false);
+  const [positionFilter, setPositionFilter] = useState<string>("all");
+  const [cityFilter, setCityFilter] = useState<string>("all");
+  const [educationFilter, setEducationFilter] = useState<string>("all");
+  const [noticePeriodFilter, setNoticePeriodFilter] = useState<string>("all");
+  const [mattelFilter, setMattelFilter] = useState<"all" | "yes" | "no">("all");
+  const [ageMin, setAgeMin] = useState("");
+  const [ageMax, setAgeMax] = useState("");
+
   // "New Candidate" dialog state.
   const [isAddCandidateOpen, setIsAddCandidateOpen] = useState(false);
   const [candidateForm, setCandidateForm] = useState<CandidateFormState>(
@@ -359,6 +371,63 @@ export const RecruitmentBoard: FC = () => {
     [stages]
   );
 
+  // Flatten every column into one list so we can derive dropdown options
+  // from the real data, same idea as `records` in Candidates.tsx.
+  const allCandidates = useMemo(() => Object.values(columns).flat(), [columns]);
+
+  const positionOptions = useMemo(
+    () => Array.from(new Set(allCandidates.map((c) => c.Applied_Position).filter(Boolean))).sort(),
+    [allCandidates]
+  );
+  const cityOptions = useMemo(
+    () => Array.from(new Set(allCandidates.map((c) => c.City).filter(Boolean))).sort(),
+    [allCandidates]
+  );
+  const educationOptions = useMemo(
+    () => Array.from(new Set(allCandidates.map((c) => c.Education).filter(Boolean))).sort(),
+    [allCandidates]
+  );
+  const noticePeriodOptions = useMemo(
+    () => Array.from(new Set(allCandidates.map((c) => c.Notice_Period).filter(Boolean))).sort(),
+    [allCandidates]
+  );
+
+  // Bundled once so every StageColumn gets the same object reference unless
+  // a filter actually changes (avoids needless re-renders).
+  const columnFilters = useMemo(
+    () => ({
+      position: positionFilter,
+      city: cityFilter,
+      education: educationFilter,
+      noticePeriod: noticePeriodFilter,
+      mattel: mattelFilter,
+      ageMin,
+      ageMax,
+    }),
+    [positionFilter, cityFilter, educationFilter, noticePeriodFilter, mattelFilter, ageMin, ageMax]
+  );
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (positionFilter !== "all") count++;
+    if (cityFilter !== "all") count++;
+    if (educationFilter !== "all") count++;
+    if (noticePeriodFilter !== "all") count++;
+    if (mattelFilter !== "all") count++;
+    if (ageMin || ageMax) count++;
+    return count;
+  }, [positionFilter, cityFilter, educationFilter, noticePeriodFilter, mattelFilter, ageMin, ageMax]);
+
+  function clearAllFilters() {
+    setPositionFilter("all");
+    setCityFilter("all");
+    setEducationFilter("all");
+    setNoticePeriodFilter("all");
+    setMattelFilter("all");
+    setAgeMin("");
+    setAgeMax("");
+  }
+
   // Names from the fixed list that aren't already a column.
   const availableStageNames = useMemo(
     () => DEFAULT_STAGE_NAMES.filter((name) => !stages.some((s) => s.name === name)),
@@ -410,16 +479,23 @@ export const RecruitmentBoard: FC = () => {
 
     // Grab the candidate + destination stage before mutating state, so we
     // know what (and whether) to log once the move lands.
-    const movingCandidate = (columns[sourceId] ?? [])[source.index];
+    const sourceList = columns[sourceId] ?? [];
+    const movingCandidate = sourceList.find(c => c.id === draggableId);
     const destStage = orderedStages.find((s) => s.id === destId);
 
     setColumns((prev) => {
       const sourceItems = Array.from(prev[sourceId] ?? []);
-      const [moved] = sourceItems.splice(source.index, 1);
-      if (!moved) return prev;
+      
+      // Find the real index by ID (not by the filtered visual index)
+      const realSourceIndex = sourceItems.findIndex(c => c.id === draggableId);
+      if (realSourceIndex === -1) return prev;
+
+      const [moved] = sourceItems.splice(realSourceIndex, 1);
 
       const destItems =
         sourceId === destId ? sourceItems : Array.from(prev[destId] ?? []);
+      
+      // Still using destination.index for now (visual drop position)
       destItems.splice(destination.index, 0, moved);
 
       return {
@@ -795,6 +871,147 @@ async function handleSendInterviewEmail() {
           </CardHeader>
 
           <CardContent>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setShowFilters((s) => !s)}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm ${
+                  showFilters
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "bg-card hover:bg-muted/40"
+                }`}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={clearAllFilters}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            {showFilters && (
+              <div className="mb-4 grid grid-cols-1 gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Applied Position
+                  </label>
+                  <select
+                    value={positionFilter}
+                    onChange={(e) => setPositionFilter(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                  >
+                    <option value="all">All positions</option>
+                    {positionOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">City</label>
+                  <select
+                    value={cityFilter}
+                    onChange={(e) => setCityFilter(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                  >
+                    <option value="all">All cities</option>
+                    {cityOptions.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Education
+                  </label>
+                  <select
+                    value={educationFilter}
+                    onChange={(e) => setEducationFilter(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                  >
+                    <option value="all">All education levels</option>
+                    {educationOptions.map((ed) => (
+                      <option key={ed} value={ed}>
+                        {ed}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Notice Period
+                  </label>
+                  <select
+                    value={noticePeriodFilter}
+                    onChange={(e) => setNoticePeriodFilter(e.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                  >
+                    <option value="all">All notice periods</option>
+                    {noticePeriodOptions.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Age range
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      value={ageMin}
+                      onChange={(e) => setAgeMin(e.target.value)}
+                      placeholder="Min"
+                      className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                    />
+                    <span className="text-xs text-muted-foreground">to</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={ageMax}
+                      onChange={(e) => setAgeMax(e.target.value)}
+                      placeholder="Max"
+                      className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Mattel Employee
+                  </label>
+                  <select
+                    value={mattelFilter}
+                    onChange={(e) => setMattelFilter(e.target.value as "all" | "yes" | "no")}
+                    className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                  >
+                    <option value="all">All</option>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
             {loading ? (
               <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
                 Loading pipeline…
@@ -819,6 +1036,7 @@ async function handleSendInterviewEmail() {
                       searchValue={getSearch(UNASSIGNED_ID)}
                       onSearchChange={(v) => setSearch(UNASSIGNED_ID, v)}
                       onOpenCandidate={openCandidateProfile}
+                      filters={columnFilters}
                     />
                   )}
 
@@ -835,6 +1053,7 @@ async function handleSendInterviewEmail() {
                       searchValue={getSearch(stage.id)}
                       onSearchChange={(v) => setSearch(stage.id, v)}
                       onOpenCandidate={openCandidateProfile}
+                      filters={columnFilters}
                     />
                   ))}
 
@@ -1249,6 +1468,16 @@ interface StageColumnProps {
   onSearchChange: (value: string) => void;
 
   onOpenCandidate: (candidate: OperatorRecord) => void;
+
+  filters: {
+    position: string;
+    city: string;
+    education: string;
+    noticePeriod: string;
+    mattel: "all" | "yes" | "no";
+    ageMin: string;
+    ageMax: string;
+  };
 }
 
 const StageColumn: FC<StageColumnProps> = ({
@@ -1263,27 +1492,49 @@ const StageColumn: FC<StageColumnProps> = ({
   searchValue,
   onSearchChange,
   onOpenCandidate,
+  filters,
 }) => {
   const filteredCandidates = useMemo(() => {
     const query = searchValue.trim().toLowerCase();
-    if (!query) return candidates;
+    const minAge = filters.ageMin.trim() ? Number(filters.ageMin) : null;
+    const maxAge = filters.ageMax.trim() ? Number(filters.ageMax) : null;
 
     return candidates.filter((c) => {
-      const haystack = [
-        c.First_Name,
-        c.Last_Name,
-        c.Applied_Position,
-        c.City,
-        c.email,
-        c.Skills,
-        c.Phone_Number,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
+      const matchesSearch =
+        !query ||
+        [c.First_Name, c.Last_Name, c.Applied_Position, c.City, c.email, c.Skills, c.Phone_Number]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+
+      const matchesPosition = filters.position === "all" || c.Applied_Position === filters.position;
+      const matchesCity = filters.city === "all" || c.City === filters.city;
+      const matchesEducation = filters.education === "all" || c.Education === filters.education;
+      const matchesNotice =
+        filters.noticePeriod === "all" || c.Notice_Period === filters.noticePeriod;
+      const matchesMattel =
+        filters.mattel === "all" ||
+        (filters.mattel === "yes"
+          ? !!c.Former_Current_Mattel_Employee
+          : !c.Former_Current_Mattel_Employee);
+
+      const age = c.Age ?? null;
+      const matchesAgeMin = minAge === null || (age !== null && age >= minAge);
+      const matchesAgeMax = maxAge === null || (age !== null && age <= maxAge);
+
+      return (
+        matchesSearch &&
+        matchesPosition &&
+        matchesCity &&
+        matchesEducation &&
+        matchesNotice &&
+        matchesMattel &&
+        matchesAgeMin &&
+        matchesAgeMax
+      );
     });
-  }, [candidates, searchValue]);
+  }, [candidates, searchValue, filters]);
 
   const visibleCandidates = filteredCandidates.slice(0, visibleCount);
   const remaining = filteredCandidates.length - visibleCandidates.length;
