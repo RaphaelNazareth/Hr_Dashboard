@@ -106,7 +106,9 @@ export const ApplyPage: FC = () => {
 
   const [form, setForm] = useState<ApplicationForm>(emptyForm());
   const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [extracting, setExtracting] = useState(false);
+  const [ktpFile, setKtpFile] = useState<File | null>(null);
+  const [extractingCV, setExtractingCV] = useState(false);
+  const [extractingKTP, setExtractingKTP] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -155,7 +157,7 @@ export const ApplyPage: FC = () => {
     setResumeFile(file);
     if (!file) return;
 
-    setExtracting(true);
+    setExtractingCV(true);
     setFormError(null);
     try {
       const body = new FormData();
@@ -191,7 +193,7 @@ export const ApplyPage: FC = () => {
     } catch (err) {
       console.error("CV extraction failed", err);
     } finally {
-      setExtracting(false);
+      setExtractingCV(false);
     }
   }
 
@@ -356,6 +358,102 @@ export const ApplyPage: FC = () => {
                 </div>
               )}
 
+              <div className="space-y-1">
+                  <h3 className="text-base font-semibold">Upload Documents</h3>
+                  <p className="text-sm text-muted-foreground">
+                      Upload your documents first. We'll automatically extract information to help complete your application.
+                  </p>
+              </div>
+
+              {/* Upload Documents */}
+              <div className="rounded-lg border bg-muted/20 p-5 space-y-6">
+
+                <div>
+                  <Label htmlFor="Resume_Input" className="text-sm font-semibold">
+                    Resume / Curriculum Vitae <span className="text-destructive">*</span>
+                  </Label>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Upload your resume first. We'll automatically extract information and
+                    fill in the application form for you. Please review the information
+                    before submitting.
+                  </p>
+
+                  <ul className="mt-2 ml-5 list-disc text-xs text-muted-foreground">
+                    <li>Name</li>
+                    <li>Email & Phone Number</li>
+                    <li>Education</li>
+                    <li>Work Experience</li>
+                    <li>Skills</li>
+                  </ul>
+
+                  <Input
+                    id="Resume_Input"
+                    type="file"
+                    accept=".pdf,.doc,.docx,image/*"
+                    onChange={(e) => handleResumeUpload(e.target.files?.[0] ?? null)}
+                    className="mt-3 cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/20"
+                  />
+
+                  {resumeFile && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Selected: {resumeFile.name} ({(resumeFile.size / 1024).toFixed(0)} KB)
+                    </p>
+                  )}
+
+                  {extractingCV && (
+                    <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Extracting information from your CV...
+                    </p>
+                  )}
+                </div>
+
+                {/* Divider */}
+                <div className="border-t pt-6">
+
+                  <Label htmlFor="KTP_Input" className="text-sm font-semibold">
+                    Indonesian Identity Card (KTP)
+                  </Label>
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Upload your Indonesian Identity Card (KTP). Automatic extraction will be
+                    available soon.
+                  </p>
+
+                  <ul className="mt-2 ml-5 list-disc text-xs text-muted-foreground">
+                    <li>Full Name</li>
+                    <li>NIK</li>
+                    <li>Date of Birth</li>
+                    <li>Address</li>
+                    <li>Gender</li>
+                  </ul>
+
+                  <Input
+                    id="KTP_Input"
+                    type="file"
+                    accept=".pdf,image/*"
+                    onChange={(e) => setKtpFile(e.target.files?.[0] ?? null)}
+                    className="mt-3 cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/20"
+                  />
+
+                  {ktpFile && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Selected: {ktpFile.name} ({(ktpFile.size / 1024).toFixed(0)} KB)
+                    </p>
+                  )}
+
+                  {extractingKTP && (
+                    <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Extracting information from your KTP...
+                    </p>
+                  )}
+
+                </div>
+
+              </div>
+
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nama depan (First name)" htmlFor="First_Name" required>
                   <Input
@@ -494,27 +592,6 @@ export const ApplyPage: FC = () => {
                   placeholder="Keahlian lainnya (Other skills, comma-separated)"
                 />
               </div>
-
-              <Field label="Lampiran / data resume (Resume)" htmlFor="Resume_Input">
-                <Input
-                  id="Resume_Input"
-                  type="file"
-                  accept=".pdf,.doc,.docx,image/*"
-                  onChange={(e) => handleResumeUpload(e.target.files?.[0] ?? null)}
-                  className="cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/20"
-                />
-                {resumeFile && (
-                  <p className="text-xs text-muted-foreground">
-                    Selected: {resumeFile.name} ({(resumeFile.size / 1024).toFixed(0)} KB)
-                  </p>
-                )}
-                {extracting && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Reading your CV and filling the form…
-                  </p>
-                )}
-              </Field>
 
               <div className="space-y-2 rounded-lg border bg-muted/20 p-4">
                 <CheckboxField
