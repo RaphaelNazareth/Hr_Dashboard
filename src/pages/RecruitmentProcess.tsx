@@ -55,7 +55,6 @@ import {
 import {
   pb,
   OPERATOR_COLLECTION,
-  TRACKING_COLLECTION,
   DEFAULT_STAGE_NAMES,
   isInterviewStage,
   logTrackingEvent,

@@ -21,7 +21,6 @@ import { RecruitmentBoard } from './pages/RecruitmentProcess';
 import { ProfilesPage } from './pages/Profiles';
 import { JobsPage } from './pages/JobsPage';
 import { ApplyPage } from './pages/ApplyPage';
-// import { FormsPage } from './pages/FormsPage';
 
 const AppRoutes: FC = () => {
   return (

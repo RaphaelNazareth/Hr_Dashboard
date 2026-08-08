@@ -2,7 +2,6 @@ import { Header } from '@/components/Header';
 import { DraggableCard } from '@/components/DraggableCard';
 import { QuickLinks } from '@/components/QuickLinks';
 import { RecentActivity } from '@/components/RecentActivity';
-import { HiringFunnel } from '@/components/hiring-funnel';
 import { WelcomeChecklist } from '@/components/WelcomeChecklist';
 import { useFocusMode } from '@/contexts/FocusModeContext';
 import { storage } from '@/lib/utils';

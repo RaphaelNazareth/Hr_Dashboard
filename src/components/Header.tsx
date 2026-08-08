@@ -1,10 +1,4 @@
 import { Button } from '@/components/ui/button';
-import { 
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { useFocusMode } from '@/contexts/FocusModeContext';
 import { currentUser } from '@/data/mockData';
 import { getTimeBasedGreeting } from '@/lib/utils';
@@ -15,9 +9,6 @@ import {
   Briefcase,
   Users, 
   MessageSquare,
-  Sparkles,
-  ChevronDown,
-  Building2,
   Paperclip,
   Calendar,
 } from 'lucide-react';

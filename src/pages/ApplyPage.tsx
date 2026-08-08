@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, Briefcase, AlertCircle } from "lucide-react";
 import { INDONESIAN_CITIES } from "@/pages/indonesiancities";
@@ -108,7 +107,7 @@ export const ApplyPage: FC = () => {
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [ktpFile, setKtpFile] = useState<File | null>(null);
   const [extractingCV, setExtractingCV] = useState(false);
-  const [extractingKTP, setExtractingKTP] = useState(false);
+  const [extractingKTP] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
