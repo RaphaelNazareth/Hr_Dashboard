@@ -467,10 +467,16 @@ export const ApplyPage: FC = () => {
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [ktpFile, setKtpFile] = useState<File | null>(null);
   const [extractingCV, setExtractingCV] = useState(false);
-  const [extractingKTP] = useState(false);
+  const [extractingKTP, setExtractingKTP] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+
+  // Tracks which fields currently hold a value we auto-filled (from CV or
+  // KTP), as opposed to something the user typed themselves. Lets a later
+  // auto-fill safely overwrite an earlier auto-filled guess, without ever
+  // overwriting something the user corrected by hand.
+  const autoFilledFields = useRef<Set<keyof ApplicationForm>>(new Set());
 
   useEffect(() => {
     if (!jobId) {
@@ -500,7 +506,32 @@ export const ApplyPage: FC = () => {
   }, [jobId]);
 
   function updateField<K extends keyof ApplicationForm>(field: K, value: ApplicationForm[K]) {
+    autoFilledFields.current.delete(field);
     setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  // Applies an auto-filled value unless the field currently holds something
+  // the user typed themselves (i.e. it has a non-empty/non-default value AND
+  // isn't marked as auto-filled). Empty/undefined incoming values are ignored.
+  function applyAutoFilled<K extends keyof ApplicationForm>(
+    prev: ApplicationForm,
+    field: K,
+    value: ApplicationForm[K] | null | undefined
+  ): ApplicationForm[K] {
+    if (value === null || value === undefined || value === "") return prev[field];
+    // Treat empty string / false (checkbox defaults) as not user-owned so
+    // auto-fill can still populate them. Once the user edits the field,
+    // updateField removes it from autoFilledFields and the non-empty check
+    // (or explicit toggle for booleans) protects it.
+    const isEmptyish =
+      prev[field] === "" ||
+      prev[field] === false ||
+      prev[field] === undefined ||
+      prev[field] === null;
+    const userOwned = !isEmptyish && !autoFilledFields.current.has(field);
+    if (userOwned) return prev[field];
+    autoFilledFields.current.add(field);
+    return value;
   }
 
   function toggleInList(
@@ -580,31 +611,99 @@ export const ApplyPage: FC = () => {
       if (!res.ok) throw new Error(`Server responded ${res.status}`);
       const data = await res.json();
 
-      setForm((prev) => ({
-        ...prev,
-        First_Name: data.first_name ?? prev.First_Name,
-        Last_Name: data.last_name ?? prev.Last_Name,
-        Age: data.age != null ? String(data.age) : prev.Age,
-        email: data.email ?? prev.email,
-        Phone_Number: data.phone ?? prev.Phone_Number,
-        Mobile_Phone_WA: data.phone ?? prev.Mobile_Phone_WA,
-        City: data.city ?? prev.City,
-        ExperienceYears:
-          data.work_experience_years != null
-            ? String(data.work_experience_years)
-            : prev.ExperienceYears,
-        Education: data.highest_education ?? prev.Education,
-        School: data.school_name ?? prev.School,
-        skillsOther: Array.isArray(data.skills) && data.skills.length
-          ? data.skills.join(", ")
-          : prev.skillsOther,
-        Former_Current_Mattel_Employee:
-          data.ex_mattel_employee ?? prev.Former_Current_Mattel_Employee,
-      }));
+      setForm((prev) => {
+        const next = { ...prev };
+        const careerFields: Partial<Record<keyof ApplicationForm, unknown>> = {
+          Age: data.age != null ? String(data.age) : undefined,
+          email: data.email ?? undefined,
+          Phone_Number: data.phone ?? undefined,
+          Mobile_Phone_WA: data.phone ?? undefined,
+          ExperienceYears:
+            data.work_experience_years != null ? String(data.work_experience_years) : undefined,
+          Education: data.highest_education ?? undefined,
+          School: data.school_name ?? undefined,
+          skillsOther:
+            Array.isArray(data.skills) && data.skills.length ? data.skills.join(", ") : undefined,
+          Former_Current_Mattel_Employee: data.ex_mattel_employee ?? undefined,
+        };
+        (Object.keys(careerFields) as (keyof ApplicationForm)[]).forEach((key) => {
+          (next as any)[key] = applyAutoFilled(prev, key, careerFields[key] as any);
+        });
+
+        // Name and City: CV is a fallback guess only, never overwrites anything
+        // already there (including a KTP-derived value) — KTP is authoritative
+        // for name, and City is meant to reflect current residence, not a guess.
+        if (!prev.First_Name && data.first_name) {
+          next.First_Name = data.first_name;
+          autoFilledFields.current.add("First_Name");
+        }
+        if (!prev.Last_Name && data.last_name) {
+          next.Last_Name = data.last_name;
+          autoFilledFields.current.add("Last_Name");
+        }
+        if (!prev.City && data.city) {
+          next.City = data.city;
+          autoFilledFields.current.add("City");
+        }
+
+        return next;
+      });
     } catch (err) {
       console.error("CV extraction failed", err);
     } finally {
       setExtractingCV(false);
+    }
+  }
+
+  async function handleKtpUpload(file: File | null) {
+    setKtpFile(file);
+    if (!file) return;
+
+    setExtractingKTP(true);
+    setFormError(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("http://127.0.0.1:8000/api/extract-ktp", {
+        method: "POST",
+        body,
+      });
+
+      if (!res.ok) throw new Error(`Server responded ${res.status}`);
+      const data = await res.json();
+
+      setForm((prev) => {
+        const next = { ...prev };
+        const [ktpFirstName, ...ktpLastNameParts] = (data.nama ?? "").trim().split(/\s+/);
+        const ktpLastName = ktpLastNameParts.join(" ");
+
+        const identityFields: Partial<Record<keyof ApplicationForm, unknown>> = {
+          First_Name: data.nama ? ktpFirstName : undefined,
+          Last_Name: data.nama ? ktpLastName : undefined,
+          Gender: data.jenis_kelamin ?? undefined,
+          Place_Of_Birth: data.tempat_lahir ?? undefined,
+          Date_Of_Birth: data.tanggal_lahir ?? undefined,
+          KTP_Address: data.alamat ?? undefined,
+          RT: data.rt ?? undefined,
+          RW: data.rw ?? undefined,
+          Kelurahan: data.kelurahan_desa ?? undefined,
+          Kecamatan: data.kecamatan ?? undefined,
+          Kota_Kabupaten: data.kota_kabupaten ?? undefined,
+          Provinsi: data.provinsi ?? undefined,
+          Religion: data.agama ?? undefined,
+          Marital_Status: data.status_perkawinan ?? undefined,
+          Identity_Card_Number: data.nik_confident ? data.nik : undefined,
+        };
+        (Object.keys(identityFields) as (keyof ApplicationForm)[]).forEach((key) => {
+          (next as any)[key] = applyAutoFilled(prev, key, identityFields[key] as any);
+        });
+
+        return next;
+      });
+    } catch (err) {
+      console.error("KTP extraction failed", err);
+    } finally {
+      setExtractingKTP(false);
     }
   }
 
@@ -1047,8 +1146,7 @@ export const ApplyPage: FC = () => {
                     Indonesian Identity Card (KTP)
                   </Label>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Upload your Indonesian Identity Card (KTP). Automatic extraction will be
-                    available soon.
+                    Upload your Indonesian Identity Card (KTP).
                   </p>
                   <ul className="mt-2 ml-5 list-disc text-xs text-muted-foreground">
                     <li>Full Name</li>
@@ -1061,7 +1159,7 @@ export const ApplyPage: FC = () => {
                     id="KTP_Input"
                     type="file"
                     accept=".pdf,image/*"
-                    onChange={(e) => setKtpFile(e.target.files?.[0] ?? null)}
+                    onChange={(e) => handleKtpUpload(e.target.files?.[0] ?? null)}
                     className="mt-3 cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/20"
                   />
                   {ktpFile && (
