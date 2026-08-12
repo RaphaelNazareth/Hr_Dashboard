@@ -617,12 +617,50 @@ export const ApplyPage: FC = () => {
     };
   }, [jobId]);
 
+  // Tracks which fields were populated by a background process (CV
+  // extraction) rather than typed by the user, so a later auto-fill pass
+  // doesn't silently clobber something the user already edited by hand.
+  const autoFilledFields = useRef<Set<keyof ApplicationForm>>(new Set());
+
   function updateField<K extends keyof ApplicationForm>(field: K, value: ApplicationForm[K]) {
+    // Any direct edit — typing, checking a box, picking a select option —
+    // means the user now owns this field; stop treating it as auto-filled.
+    autoFilledFields.current.delete(field);
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  // Applies an auto-filled value unless the field currently holds something
+  // the user typed themselves (i.e. it has a non-empty/non-default value AND
+  // isn't marked as auto-filled). Empty/undefined incoming values are ignored.
+  // Used for passive background fills (CV extraction) — NOT for explicit
+  // picks like a postal-code suggestion, which should always win since the
+  // user directly chose that value.
+  function applyAutoFilled<K extends keyof ApplicationForm>(
+    prev: ApplicationForm,
+    field: K,
+    value: ApplicationForm[K] | null | undefined
+  ): ApplicationForm[K] {
+    if (value === null || value === undefined || value === "") return prev[field];
+    // Treat empty string / false (checkbox defaults) as not user-owned so
+    // auto-fill can still populate them. Once the user edits the field,
+    // updateField removes it from autoFilledFields and the non-empty check
+    // (or explicit toggle for booleans) protects it.
+    const isEmptyish =
+      prev[field] === "" ||
+      prev[field] === false ||
+      prev[field] === undefined ||
+      prev[field] === null;
+    const userOwned = !isEmptyish && !autoFilledFields.current.has(field);
+    if (userOwned) return prev[field];
+    autoFilledFields.current.add(field);
+    return value;
+  }
+
   // Fills Kelurahan/Kecamatan/Kota_Kabupaten/Provinsi/Zip_Code together,
-  // whichever of those fields the suggestion was picked from.
+  // whichever of those fields the suggestion was picked from. This is an
+  // explicit user selection (they clicked a suggestion), so unlike
+  // applyAutoFilled it always overwrites — including whatever they typed
+  // into that same field to search with.
   function applyKtpPostalEntry(entry: CariKodePosEntry) {
     setForm((prev) => ({
       ...prev,
@@ -713,22 +751,25 @@ export const ApplyPage: FC = () => {
 
       setForm((prev) => ({
         ...prev,
-        First_Name: data.first_name ?? prev.First_Name,
-        Last_Name: data.last_name ?? prev.Last_Name,
-        Age: data.age != null ? String(data.age) : prev.Age,
-        email: data.email ?? prev.email,
-        Phone_Number: data.phone ?? prev.Phone_Number,
-        Mobile_Phone_WA: data.phone ?? prev.Mobile_Phone_WA,
-        City: data.city ?? prev.City,
-        ExperienceYears:
-          data.work_experience_years != null
-            ? String(data.work_experience_years)
-            : prev.ExperienceYears,
-        Education: data.highest_education ?? prev.Education,
-        School: data.school_name ?? prev.School,
-        skillsOther: Array.isArray(data.skills) && data.skills.length
-          ? data.skills.join(", ")
-          : prev.skillsOther,
+        First_Name: applyAutoFilled(prev, "First_Name", data.first_name),
+        Last_Name: applyAutoFilled(prev, "Last_Name", data.last_name),
+        Age: applyAutoFilled(prev, "Age", data.age != null ? String(data.age) : null),
+        email: applyAutoFilled(prev, "email", data.email),
+        Phone_Number: applyAutoFilled(prev, "Phone_Number", data.phone),
+        Mobile_Phone_WA: applyAutoFilled(prev, "Mobile_Phone_WA", data.phone),
+        City: applyAutoFilled(prev, "City", data.city),
+        ExperienceYears: applyAutoFilled(
+          prev,
+          "ExperienceYears",
+          data.work_experience_years != null ? String(data.work_experience_years) : null
+        ),
+        Education: applyAutoFilled(prev, "Education", data.highest_education),
+        School: applyAutoFilled(prev, "School", data.school_name),
+        skillsOther: applyAutoFilled(
+          prev,
+          "skillsOther",
+          Array.isArray(data.skills) && data.skills.length ? data.skills.join(", ") : null
+        ),
         Former_Current_Mattel_Employee:
           data.ex_mattel_employee ?? prev.Former_Current_Mattel_Employee,
       }));
