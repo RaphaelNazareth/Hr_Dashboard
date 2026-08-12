@@ -1,7 +1,5 @@
 import { type FC, type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import PocketBase from "pocketbase";
-import type { RecordModel } from "pocketbase";
 import { Header } from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,44 +26,33 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  fetchJobs,
+  createJob,
+  updateJobStatus,
+  deleteJob,
+  subscribeToJobs,
+} from "@/lib/candidateBoard";
+import type { JobRecord, NewJobInput } from "@/lib/candidateBoard";
 
-const pb = new PocketBase(
-  import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
-);
-pb.autoCancellation(false);
-
-// This is a separate PocketBase collection from Operator_dataset /
-// Candidate_Tracking — it just holds the job postings themselves. Create it
-// in the PocketBase admin UI with these fields if it doesn't exist yet:
-//   Job_Title (text, required)
-//   Job_Description (text/editor, required)
-//   Requirements (text/editor, required)
-//   Status ("Open" | "Closed", default "Open")
-// Its API "List/Search" and "View" rules need to allow public read (empty
-// rule) since ApplyPage fetches a job by id without auth.
-const JOBS_COLLECTION = "Jobs";
-
-interface Job extends RecordModel {
-  Job_Title: string;
-  Job_Description: string;
-  Requirements: string;
-  Status: "Open" | "Closed";
-  created: string;
-}
+// public.jobs — see the schema for the full column list. Realtime updates
+// require the table to be added to Supabase's `supabase_realtime`
+// publication (Database → Replication in the dashboard) so INSERT/UPDATE/
+// DELETE events actually reach this page.
 
 interface JobFormState {
-  Job_Title: string;
-  Job_Description: string;
-  Requirements: string;
-  Status: "Open" | "Closed";
+  job_title: string;
+  job_description: string;
+  requirements: string;
+  status: "Open" | "Closed";
 }
 
 function emptyJobForm(): JobFormState {
-  return { Job_Title: "", Job_Description: "", Requirements: "", Status: "Open" };
+  return { job_title: "", job_description: "", requirements: "", status: "Open" };
 }
 
 export const JobsPage: FC = () => {
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,36 +67,23 @@ export const JobsPage: FC = () => {
     void loadJobs();
 
     // Keep this page in sync with the database in real time — any create,
-    // update, or delete on the Jobs collection (from this tab, another tab,
-    // another user, or the PocketBase admin UI) patches local state
-    // immediately instead of waiting for a manual refresh.
-    let unsubscribe: (() => void) | undefined;
-
-    pb.collection(JOBS_COLLECTION)
-      .subscribe<Job>("*", (e) => {
-        setJobs((prev) => {
-          if (e.action === "create") {
-            if (prev.some((j) => j.id === e.record.id)) return prev;
-            return [e.record, ...prev];
-          }
-          if (e.action === "update") {
-            return prev.map((j) => (j.id === e.record.id ? e.record : j));
-          }
-          if (e.action === "delete") {
-            return prev.filter((j) => j.id !== e.record.id);
-          }
-          return prev;
-        });
-      })
-      .then((unsub) => {
-        unsubscribe = unsub;
-      })
-      .catch((err) => {
-        console.error("Failed to subscribe to Jobs realtime updates", err);
-      });
+    // update, or delete on public.jobs (from this tab, another tab, another
+    // user, or the Supabase dashboard) patches local state immediately
+    // instead of waiting for a manual refresh.
+    const unsubscribe = subscribeToJobs({
+      onInsert: (job) => {
+        setJobs((prev) => (prev.some((j) => j.id === job.id) ? prev : [job, ...prev]));
+      },
+      onUpdate: (job) => {
+        setJobs((prev) => prev.map((j) => (j.id === job.id ? job : j)));
+      },
+      onDelete: (jobId) => {
+        setJobs((prev) => prev.filter((j) => j.id !== jobId));
+      },
+    });
 
     return () => {
-      unsubscribe?.();
+      unsubscribe();
     };
   }, []);
 
@@ -117,13 +91,11 @@ export const JobsPage: FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await pb.collection(JOBS_COLLECTION).getFullList<Job>({
-        sort: "-created",
-      });
+      const result = await fetchJobs();
       setJobs(result);
     } catch (err) {
       console.error("Failed to load jobs", err);
-      setError("Couldn't load job postings. Check your PocketBase connection.");
+      setError("Couldn't load job postings. Check your Supabase connection.");
     } finally {
       setLoading(false);
     }
@@ -141,7 +113,7 @@ export const JobsPage: FC = () => {
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
-    if (!form.Job_Title.trim() || !form.Job_Description.trim()) {
+    if (!form.job_title.trim() || !form.job_description.trim()) {
       setFormError("Job title and description are required.");
       return;
     }
@@ -149,13 +121,16 @@ export const JobsPage: FC = () => {
     setSubmitting(true);
     setFormError(null);
     try {
-      const created = await pb.collection(JOBS_COLLECTION).create<Job>({
-        Job_Title: form.Job_Title.trim(),
-        Job_Description: form.Job_Description.trim(),
-        Requirements: form.Requirements.trim(),
-        Status: form.Status,
-      });
-      setJobs((prev) => [created, ...prev]);
+      const payload: NewJobInput = {
+        job_title: form.job_title.trim(),
+        job_description: form.job_description.trim(),
+        requirements: form.requirements.trim() || null,
+        status: form.status,
+      };
+      const created = await createJob(payload);
+      // The realtime INSERT event will also deliver this row; the dedupe
+      // check in onInsert keeps it from being added twice.
+      setJobs((prev) => (prev.some((j) => j.id === created.id) ? prev : [created, ...prev]));
       setIsOpen(false);
     } catch (err) {
       console.error("Failed to create job", err);
@@ -165,12 +140,10 @@ export const JobsPage: FC = () => {
     }
   }
 
-  async function handleToggleStatus(job: Job) {
-    const nextStatus = job.Status === "Open" ? "Closed" : "Open";
+  async function handleToggleStatus(job: JobRecord) {
+    const nextStatus = job.status === "Open" ? "Closed" : "Open";
     try {
-      const updated = await pb
-        .collection(JOBS_COLLECTION)
-        .update<Job>(job.id, { Status: nextStatus });
+      const updated = await updateJobStatus(job.id, nextStatus);
       setJobs((prev) => prev.map((j) => (j.id === job.id ? updated : j)));
     } catch (err) {
       console.error("Failed to update job status", err);
@@ -178,10 +151,10 @@ export const JobsPage: FC = () => {
     }
   }
 
-  async function handleDelete(job: Job) {
-    if (!window.confirm(`Delete the "${job.Job_Title}" posting? This can't be undone.`)) return;
+  async function handleDelete(job: JobRecord) {
+    if (!window.confirm(`Delete the "${job.job_title}" posting? This can't be undone.`)) return;
     try {
-      await pb.collection(JOBS_COLLECTION).delete(job.id);
+      await deleteJob(job.id);
       setJobs((prev) => prev.filter((j) => j.id !== job.id));
     } catch (err) {
       console.error("Failed to delete job", err);
@@ -189,11 +162,11 @@ export const JobsPage: FC = () => {
     }
   }
 
-  function applyLinkFor(job: Job) {
+  function applyLinkFor(job: JobRecord) {
     return `${window.location.origin}/apply/${job.id}`;
   }
 
-  async function copyLink(job: Job) {
+  async function copyLink(job: JobRecord) {
     try {
       await navigator.clipboard.writeText(applyLinkFor(job));
       setCopiedId(job.id);
@@ -242,31 +215,31 @@ export const JobsPage: FC = () => {
               <Card key={job.id} className="flex flex-col">
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-2">
-                    <CardTitle className="text-lg leading-snug">{job.Job_Title}</CardTitle>
+                    <CardTitle className="text-lg leading-snug">{job.job_title}</CardTitle>
                     <Badge
                       className={cn(
                         "shrink-0 border-0 font-medium",
-                        job.Status === "Open"
+                        job.status === "Open"
                           ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                           : "bg-muted text-muted-foreground"
                       )}
                     >
-                      {job.Status}
+                      {job.status}
                     </Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-1 flex-col gap-4">
                   <p className="line-clamp-3 text-sm text-muted-foreground">
-                    {job.Job_Description}
+                    {job.job_description}
                   </p>
 
-                  {job.Requirements && (
+                  {job.requirements && (
                     <div>
                       <p className="mb-1 text-xs font-medium text-muted-foreground">
                         Requirements
                       </p>
                       <p className="line-clamp-2 text-sm text-muted-foreground">
-                        {job.Requirements}
+                        {job.requirements}
                       </p>
                     </div>
                   )}
@@ -290,7 +263,7 @@ export const JobsPage: FC = () => {
                       </Button>
                     </Link>
 
-                    <Link to={`/pipeline?position=${encodeURIComponent(job.Job_Title)}`}>
+                    <Link to={`/pipeline?position=${encodeURIComponent(job.job_title)}`}>
                       <Button size="sm" variant="ghost" className="gap-1.5">
                         <Users className="h-3.5 w-3.5" /> Applicants
                       </Button>
@@ -302,7 +275,7 @@ export const JobsPage: FC = () => {
                       className="ml-auto gap-1.5"
                       onClick={() => handleToggleStatus(job)}
                     >
-                      Mark {job.Status === "Open" ? "Closed" : "Open"}
+                      Mark {job.status === "Open" ? "Closed" : "Open"}
                     </Button>
 
                     <Button
@@ -340,41 +313,41 @@ export const JobsPage: FC = () => {
             )}
 
             <div className="space-y-1.5">
-              <Label htmlFor="Job_Title" className="text-xs font-medium">
+              <Label htmlFor="job_title" className="text-xs font-medium">
                 Job title <span className="text-destructive">*</span>
               </Label>
               <Input
-                id="Job_Title"
-                value={form.Job_Title}
-                onChange={(e) => updateField("Job_Title", e.target.value)}
+                id="job_title"
+                value={form.job_title}
+                onChange={(e) => updateField("job_title", e.target.value)}
                 placeholder="e.g. Senior Product Designer"
                 required
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="Job_Description" className="text-xs font-medium">
+              <Label htmlFor="job_description" className="text-xs font-medium">
                 Job description <span className="text-destructive">*</span>
               </Label>
               <Textarea
-                id="Job_Description"
+                id="job_description"
                 rows={4}
-                value={form.Job_Description}
-                onChange={(e) => updateField("Job_Description", e.target.value)}
+                value={form.job_description}
+                onChange={(e) => updateField("job_description", e.target.value)}
                 placeholder="What this role does day-to-day…"
                 required
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="Requirements" className="text-xs font-medium">
+              <Label htmlFor="requirements" className="text-xs font-medium">
                 Requirements
               </Label>
               <Textarea
-                id="Requirements"
+                id="requirements"
                 rows={4}
-                value={form.Requirements}
-                onChange={(e) => updateField("Requirements", e.target.value)}
+                value={form.requirements}
+                onChange={(e) => updateField("requirements", e.target.value)}
                 placeholder="Qualifications, experience, skills…"
               />
             </div>

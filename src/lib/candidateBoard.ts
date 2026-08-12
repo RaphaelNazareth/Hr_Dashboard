@@ -1,18 +1,25 @@
-import PocketBase from "pocketbase";
+import { createClient } from "@supabase/supabase-js";
 
 // ---------------------------------------------------------------------------
-// Setup — moved here from RecruitmentProcess.tsx so both pages share one
-// client and one set of collection/stage constants.
+// Supabase client
 // ---------------------------------------------------------------------------
+// Reads from Vite env vars — set these in your .env:
+//   VITE_SUPABASE_URL=...
+//   VITE_SUPABASE_ANON_KEY=...
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-export const pb = new PocketBase(
-  import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
-);
-pb.autoCancellation(false);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export const OPERATOR_COLLECTION = "Operator_dataset";
-export const TRACKING_COLLECTION = "Candidate_Tracking";
+export const CANDIDATES_TABLE = "candidates";
+export const TRACKING_TABLE = "candidate_tracking";
+export const INTERVIEW_TABLE = "interview_schedule";
+export const JOBS_TABLE = "jobs";
 
+// ---------------------------------------------------------------------------
+// Stage / status constants — these mirror the `candidates.status` CHECK
+// constraint exactly, so anything written back to the DB stays valid.
+// ---------------------------------------------------------------------------
 export const DEFAULT_STAGE_NAMES = [
   "Applied",
   "CV Screening",
@@ -26,130 +33,616 @@ export const DEFAULT_STAGE_NAMES = [
   "Offering",
   "Hired",
   "Rejected",
-];
+] as const;
 
-export interface OperatorRecord {
-  id: string;
-  created: string;
-  updated: string;
+export type CandidateStatus = (typeof DEFAULT_STAGE_NAMES)[number];
 
-  Candidate_ID: string;
-  First_Name: string;
-  Last_Name: string;
-  Age: number;
-  email: string;
-  Phone_Number: string;
-  City: string;
-  Applied_Position: string;
-  Experience: string;
-  Education: string;
-  School: string;
-  Skills: string;
-  Resume_Input: string;
-  Notice_Period: string;
-  Status: string;
-  Is_18_Plus: boolean;
-  Legal_Right_To_Work: boolean;
-  Former_Current_Mattel_Employee: boolean;
-  date: string;
-}
-
-// Any stage whose name contains "interview" triggers scheduling UI on a
-// single drag. For bulk moves we currently skip scheduling entirely (see
-// moveCandidates below) but still use this to leave a useful note.
 export function isInterviewStage(stageName: string) {
   return stageName.toLowerCase().includes("interview");
 }
 
-export async function logTrackingEvent(params: {
-  candidateId: string;
-  position: string;
+// ---------------------------------------------------------------------------
+// Types — these map 1:1 onto public.candidates. Only the columns the board
+// actually touches are listed; add more as the UI needs them.
+// ---------------------------------------------------------------------------
+export type Gender = "Laki-laki (Male)" | "Perempuan (Female)";
+export type MaritalStatus =
+  | "Single / Belum Menikah"
+  | "Married / Menikah"
+  | "Widowed / Janda / Duda";
+export type YesNo = "Yes" | "No";
+
+export interface CandidateRecord {
+  id: string;
+  candidate_code: string | null;
+  first_name: string;
+  last_name: string;
+  age: number | null;
+  gender: Gender | null;
+  place_of_birth: string | null;
+  date_of_birth: string | null;
+  email: string;
+  phone_number: string | null;
+  mobile_phone_wa: string | null;
+  identity_card_number: string | null;
+  family_card_number: string | null;
+  religion: string | null;
+  marital_status: MaritalStatus | null;
+  city: string | null;
+  applied_position: string | null;
+  job_id: string | null;
+  experience: string | null;
+  education: string | null;
+  school: string | null;
+  skills: string | null;
+  certificates: string | null;
+  languages: string | null;
+  notice_period: string | null;
+  status: CandidateStatus;
+  is_18_plus: boolean;
+  legal_right_to_work: boolean;
+  former_current_mattel_employee: boolean;
+  consent_data_collection: boolean;
+  consent_data_usage: boolean;
+  consent_data_retention: boolean;
+  resume_path: string | null;
+  ktp_path: string | null;
+  applied_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type NewCandidateInput = Omit<
+  CandidateRecord,
+  "id" | "applied_at" | "created_at" | "updated_at"
+>;
+
+// What the Apply form actually builds — resume_path/ktp_path are filled in
+// automatically by submitApplication() once the files are uploaded, so
+// callers don't pass them directly.
+export type CandidateApplicationInput = Omit<NewCandidateInput, "resume_path" | "ktp_path">;
+
+export interface TrackingRecord {
+  id: string;
+  candidate_id: string;
   stage: string;
-  date: string; // ISO datetime
-  notes?: string;
+  moved_at: string;
+  notes: string | null;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+export interface JobRecord {
+  id: string;
+  job_title: string;
+  job_description: string | null;
+  requirements: string | null;
+  status: "Open" | "Closed";
+  created_at: string;
+  updated_at: string;
+}
+
+export type NewJobInput = Pick<JobRecord, "job_title" | "job_description" | "requirements" | "status">;
+
+export async function fetchJobs(): Promise<JobRecord[]> {
+  const { data, error } = await supabase
+    .from(JOBS_TABLE)
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as JobRecord[];
+}
+
+export async function createJob(input: NewJobInput): Promise<JobRecord> {
+  const { data, error } = await supabase.from(JOBS_TABLE).insert(input).select().single();
+  if (error) throw error;
+  return data as JobRecord;
+}
+
+export async function updateJobStatus(jobId: string, status: JobRecord["status"]): Promise<JobRecord> {
+  const { data, error } = await supabase
+    .from(JOBS_TABLE)
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", jobId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as JobRecord;
+}
+
+export async function deleteJob(jobId: string): Promise<void> {
+  const { error } = await supabase.from(JOBS_TABLE).delete().eq("id", jobId);
+  if (error) throw error;
+}
+
+// Keeps a Jobs page in sync in real time — mirrors the old PocketBase
+// `subscribe("*", ...)` pattern using Supabase's postgres_changes channel.
+// Call the returned function to unsubscribe (e.g. in a useEffect cleanup).
+export function subscribeToJobs(handlers: {
+  onInsert?: (job: JobRecord) => void;
+  onUpdate?: (job: JobRecord) => void;
+  onDelete?: (jobId: string) => void;
 }) {
-  await pb.collection(TRACKING_COLLECTION).create({
-    candidate_id: params.candidateId,
-    Applied_Position: params.position,
-    Stage: params.stage,
-    Date: params.date,
-    Notes: params.notes ?? "",
-  });
+  const channel = supabase
+    .channel("jobs-realtime")
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: JOBS_TABLE },
+      (payload) => handlers.onInsert?.(payload.new as JobRecord)
+    )
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: JOBS_TABLE },
+      (payload) => handlers.onUpdate?.(payload.new as JobRecord)
+    )
+    .on(
+      "postgres_changes",
+      { event: "DELETE", schema: "public", table: JOBS_TABLE },
+      (payload) => handlers.onDelete?.((payload.old as { id: string }).id)
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }
 
-// Shared search matcher — used by both the Candidates table search and the
-// per-column search boxes on the recruitment board, so "what counts as a
-// match" never drifts between the two pages.
-export function matchesCandidateSearch(candidate: OperatorRecord, query: string): boolean {
+
+export async function fetchJobById(id: string): Promise<JobRecord> {
+  const { data, error } = await supabase.from(JOBS_TABLE).select("*").eq("id", id).single();
+  if (error) throw error;
+  return data as JobRecord;
+}
+
+// ---------------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------------
+export async function fetchCandidates(): Promise<CandidateRecord[]> {
+  const { data, error } = await supabase
+    .from(CANDIDATES_TABLE)
+    .select("*")
+    .order("applied_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as CandidateRecord[];
+}
+
+export async function fetchCandidateById(id: string): Promise<CandidateRecord> {
+  const { data, error } = await supabase
+    .from(CANDIDATES_TABLE)
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) throw error;
+  return data as CandidateRecord;
+}
+
+// Free-text search across the columns a recruiter would actually type into
+// the search box. Each whitespace-separated term must match at least one of
+// these columns (terms are ANDed together, fields within a term are ORed) —
+// same behavior as the old PocketBase filter string.
+export async function searchCandidates(rawQuery: string, limit = 50): Promise<CandidateRecord[]> {
+  let q = supabase
+    .from(CANDIDATES_TABLE)
+    .select("*")
+    .order("applied_at", { ascending: false })
+    .limit(limit);
+
+  const terms = rawQuery.trim().split(/\s+/).filter(Boolean);
+  for (const term of terms) {
+    const t = term.replace(/[%,]/g, ""); // strip chars that would break the ilike/or syntax
+    if (!t) continue;
+    q = q.or(
+      `first_name.ilike.%${t}%,last_name.ilike.%${t}%,email.ilike.%${t}%,applied_position.ilike.%${t}%,candidate_code.ilike.%${t}%`
+    );
+  }
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []) as CandidateRecord[];
+}
+
+export async function fetchTrackingHistory(candidateId: string): Promise<TrackingRecord[]> {
+  const { data, error } = await supabase
+    .from(TRACKING_TABLE)
+    .select("*")
+    .eq("candidate_id", candidateId)
+    .order("moved_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as TrackingRecord[];
+}
+
+// There's no free-text `notes` column on candidates in the schema, so notes
+// are modeled as their own append-only entries in candidate_tracking
+// (stage = "Note"). This keeps every note timestamped and attributable
+// without requiring a schema change.
+export const NOTE_STAGE = "Note";
+
+export async function addCandidateNote(candidateId: string, note: string): Promise<TrackingRecord> {
+  return logTrackingEvent({ candidateId, stage: NOTE_STAGE, notes: note });
+}
+
+// ---------------------------------------------------------------------------
+// Search / filtering helpers
+// ---------------------------------------------------------------------------
+export function matchesCandidateSearch(candidate: CandidateRecord, query: string) {
+  if (!query.trim()) return true;
   const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return [
-    candidate.First_Name,
-    candidate.Last_Name,
-    candidate.Applied_Position,
-    candidate.City,
-    candidate.email,
-    candidate.Skills,
-    candidate.Phone_Number,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase()
-    .includes(q);
+  return (
+    `${candidate.first_name} ${candidate.last_name}`.toLowerCase().includes(q) ||
+    (candidate.email ?? "").toLowerCase().includes(q) ||
+    (candidate.applied_position ?? "").toLowerCase().includes(q) ||
+    (candidate.city ?? "").toLowerCase().includes(q) ||
+    (candidate.skills ?? "").toLowerCase().includes(q)
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Bulk move — the one function both pages call.
+// Writes — status changes always land in `candidates.status` (board position)
+// AND get a matching row in `candidate_tracking` (history log), per schema.
 // ---------------------------------------------------------------------------
-
-export interface MoveResult {
-  succeeded: OperatorRecord[];
-  failed: { id: string; error: unknown }[];
+interface LogTrackingEventArgs {
+  candidateId: string;
+  stage: string;
+  date?: string;
+  notes?: string;
 }
 
-/**
- * Moves each candidate to `destinationStageName`: updates Status in
- * PocketBase, then logs a Candidate_Tracking entry.
- *
- * Intentionally does NOT touch any React state — callers apply
- * `succeeded`/`failed` to their own local state shape afterward, since
- * RecruitmentProcess.tsx and Candidates.tsx store candidates differently.
- *
- * Runs sequentially (not Promise.all) on purpose: keeps load on PocketBase
- * predictable for larger bulk selections, and means a failure on one
- * candidate can't leave others in a half-updated race.
- *
- * Bulk moves into an interview stage currently skip time scheduling — they
- * just log the stage change with a note. Scheduling per-candidate can be
- * added later without changing this function's signature.
- */
-export async function moveCandidates(
-  candidates: OperatorRecord[],
-  destinationStageName: string
-): Promise<MoveResult> {
-  const succeeded: OperatorRecord[] = [];
-  const failed: { id: string; error: unknown }[] = [];
+export async function logTrackingEvent({
+  candidateId,
+  stage,
+  date,
+  notes,
+}: LogTrackingEventArgs): Promise<TrackingRecord> {
+  const { data, error } = await supabase
+    .from(TRACKING_TABLE)
+    .insert({
+      candidate_id: candidateId,
+      stage,
+      moved_at: date ?? new Date().toISOString(),
+      notes: notes ?? null,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as TrackingRecord;
+}
+
+interface CreateInterviewScheduleArgs {
+  candidateId: string;
+  trackingId?: string | null;
+  stage: string;
+  startTime: string; // ISO
+  endTime: string; // ISO
+  interviewer?: string;
+  notes?: string;
+}
+
+export async function createInterviewSchedule({
+  candidateId,
+  trackingId,
+  stage,
+  startTime,
+  endTime,
+  interviewer,
+  notes,
+}: CreateInterviewScheduleArgs) {
+  const { data, error } = await supabase
+    .from(INTERVIEW_TABLE)
+    .insert({
+      candidate_id: candidateId,
+      tracking_id: trackingId ?? null,
+      stage,
+      start_time: startTime,
+      end_time: endTime,
+      interviewer: interviewer ?? null,
+      notes: notes ?? null,
+      status: "Scheduled",
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function updateCandidateStatus(candidateId: string, status: string) {
+  const { data, error } = await supabase
+    .from(CANDIDATES_TABLE)
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", candidateId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as CandidateRecord;
+}
+
+export async function createCandidate(input: NewCandidateInput): Promise<CandidateRecord> {
+  const { data, error } = await supabase
+    .from(CANDIDATES_TABLE)
+    .insert({ ...input, applied_at: new Date().toISOString() })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as CandidateRecord;
+}
+
+// Bulk move used by the multi-select toolbar. Updates `status` for every
+// candidate, then best-effort logs a tracking entry for each one — a failed
+// history log never rolls back the status move itself.
+export async function moveCandidates(candidates: CandidateRecord[], targetStatus: string) {
+  const succeeded: CandidateRecord[] = [];
+  const failed: CandidateRecord[] = [];
 
   for (const candidate of candidates) {
     try {
-      await pb.collection(OPERATOR_COLLECTION).update(candidate.id, {
-        Status: destinationStageName,
-      });
-      await logTrackingEvent({
-        candidateId: candidate.id,
-        position: candidate.Applied_Position,
-        stage: destinationStageName,
-        date: new Date().toISOString(),
-        notes: isInterviewStage(destinationStageName)
-          ? "Moved in bulk — interview time not yet scheduled."
-          : "",
-      });
-      succeeded.push({ ...candidate, Status: destinationStageName });
+      const updated = await updateCandidateStatus(candidate.id, targetStatus);
+      succeeded.push(updated);
+      try {
+        await logTrackingEvent({ candidateId: candidate.id, stage: targetStatus });
+      } catch (err) {
+        console.error("Status moved but history log failed", err);
+      }
     } catch (err) {
-      console.error(`Failed to move candidate ${candidate.id}`, err);
-      failed.push({ id: candidate.id, error: err });
+      console.error("Failed to move candidate", candidate.id, err);
+      failed.push(candidate);
     }
   }
 
   return { succeeded, failed };
+}
+
+// ---------------------------------------------------------------------------
+// Application submission — the Apply form writes across nearly every table
+// in the schema: candidates (core row) plus one-to-one/one-to-many detail
+// tables keyed by candidate_id. Files go to Supabase Storage first, and the
+// resulting paths are stored on the candidate row.
+// ---------------------------------------------------------------------------
+
+export const RESUME_BUCKET = "resumes";
+export const KTP_BUCKET = "ktp-documents";
+
+// Requires "resumes" and "ktp-documents" buckets to exist in Supabase
+// Storage (Storage → New bucket). KTP images contain national ID numbers,
+// so that bucket should be private with signed-URL access in production —
+// this helper uses getPublicUrl() for simplicity; swap in
+// createSignedUrl() if the bucket isn't public.
+async function uploadCandidateFile(bucket: string, file: File, candidateCode: string) {
+  const ext = file.name.split(".").pop() ?? "dat";
+  const path = `${candidateCode}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+  if (error) throw error;
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function insertRow(table: string, row: Record<string, unknown>) {
+  const { error } = await supabase.from(table).insert(row);
+  if (error) throw error;
+}
+
+async function insertRows(table: string, rows: Record<string, unknown>[]) {
+  if (!rows.length) return;
+  const { error } = await supabase.from(table).insert(rows);
+  if (error) throw error;
+}
+
+export interface CandidateAddressInput {
+  ktp_address?: string | null;
+  rt?: string | null;
+  rw?: string | null;
+  kelurahan?: string | null;
+  kecamatan?: string | null;
+  kota_kabupaten?: string | null;
+  provinsi?: string | null;
+  zip_code?: string | null;
+  present_address_same_as_ktp: boolean;
+  present_address?: string | null;
+  present_address_city?: string | null;
+  present_address_province?: string | null;
+  present_address_zip_code?: string | null;
+}
+
+export interface CandidateEmergencyContactInput {
+  name?: string | null;
+  relationship?: string | null;
+  phone?: string | null;
+  address_same_as_me: boolean;
+  address?: string | null;
+  city?: string | null;
+  province?: string | null;
+  zip_code?: string | null;
+}
+
+export type EducationLevel = "SMA/SMK" | "D3" | "S1" | "S2" | "S3";
+
+export interface CandidateEducationInput {
+  level: EducationLevel;
+  institution_name?: string | null;
+  location?: string | null;
+  major?: string | null;
+  graduation_year?: string | null;
+}
+
+export interface CandidateEmploymentHistoryInput {
+  company_name?: string | null;
+  last_position?: string | null;
+  business_type?: string | null;
+  job_description?: string | null;
+  start_date?: string | null; // YYYY-MM-DD
+  still_working: boolean;
+  finish_date?: string | null;
+  reason_for_leaving?: string | null;
+  recent_gross_monthly_salary?: number | null;
+  employer_supervisor_name?: string | null;
+  employer_supervisor_position?: string | null;
+  employer_supervisor_phone?: string | null;
+  period_known_of_employer?: string | null;
+}
+
+export interface CandidateFamilyInput {
+  spouse_name?: string | null;
+  spouse_date_of_birth?: string | null;
+  spouse_gender?: Gender | null;
+  spouse_education?: string | null;
+  number_of_child: number;
+}
+
+export interface CandidateChildInput {
+  child_name?: string | null;
+  child_gender?: Gender | null;
+  child_date_of_birth?: string | null;
+  child_education?: string | null;
+}
+
+export interface CandidateApplicationHistoryInput {
+  previously_applied?: YesNo | null;
+  previous_application_date?: string | null;
+  previous_position_applied?: string | null;
+  objection_to_reference_check?: YesNo | null;
+  acquaintance_at_mattel?: YesNo | null;
+  acquaintance_name?: string | null;
+  acquaintance_relationship?: string | null;
+}
+
+export interface CandidateOfferDetailsInput {
+  expected_gross_monthly_salary?: number | null;
+  available_start_date?: string | null;
+  uniform_size?: string | null;
+}
+
+export interface SubmitApplicationInput {
+  candidate: CandidateApplicationInput;
+  address: CandidateAddressInput;
+  emergencyContact: CandidateEmergencyContactInput;
+  education: CandidateEducationInput[];
+  employmentHistory?: CandidateEmploymentHistoryInput | null;
+  family?: CandidateFamilyInput | null;
+  children?: CandidateChildInput[];
+  applicationHistory: CandidateApplicationHistoryInput;
+  offerDetails: CandidateOfferDetailsInput;
+  resumeFile?: File | null;
+  ktpFile?: File | null;
+}
+
+// Writes the whole application. The core `candidates` row is created first
+// and is the source of truth for whether the application "happened" — if a
+// detail-table insert below fails, it's collected and surfaced rather than
+// thrown, so the applicant doesn't see a false failure after their main
+// record was already saved. Returns both the created candidate and any
+// section names that failed to save, so the caller can decide how to warn.
+export async function submitApplication(
+  input: SubmitApplicationInput
+): Promise<{ candidate: CandidateRecord; failedSections: string[] }> {
+  const candidateCode = input.candidate.candidate_code ?? `CAND-${Date.now()}`;
+
+  let resume_path: string | null = null;
+  let ktp_path: string | null = null;
+  if (input.resumeFile) {
+    resume_path = await uploadCandidateFile(RESUME_BUCKET, input.resumeFile, candidateCode);
+  }
+  if (input.ktpFile) {
+    ktp_path = await uploadCandidateFile(KTP_BUCKET, input.ktpFile, candidateCode);
+  }
+
+  const candidate = await createCandidate({
+    ...input.candidate,
+    candidate_code: candidateCode,
+    resume_path,
+    ktp_path,
+  });
+
+  const failedSections: string[] = [];
+
+  try {
+    await insertRow("candidate_address", { candidate_id: candidate.id, ...input.address });
+  } catch (err) {
+    console.error("Failed to save address", err);
+    failedSections.push("address");
+  }
+
+  try {
+    await insertRow("candidate_emergency_contact", {
+      candidate_id: candidate.id,
+      ...input.emergencyContact,
+    });
+  } catch (err) {
+    console.error("Failed to save emergency contact", err);
+    failedSections.push("emergency contact");
+  }
+
+  try {
+    await insertRows(
+      "candidate_education",
+      input.education.map((e) => ({ candidate_id: candidate.id, ...e }))
+    );
+  } catch (err) {
+    console.error("Failed to save education", err);
+    failedSections.push("education");
+  }
+
+  if (input.employmentHistory) {
+    try {
+      await insertRow("candidate_employment_history", {
+        candidate_id: candidate.id,
+        ...input.employmentHistory,
+      });
+    } catch (err) {
+      console.error("Failed to save employment history", err);
+      failedSections.push("employment history");
+    }
+  }
+
+  if (input.family) {
+    try {
+      await insertRow("candidate_family", { candidate_id: candidate.id, ...input.family });
+      if (input.children?.length) {
+        await insertRows(
+          "candidate_children",
+          input.children.map((c) => ({ candidate_id: candidate.id, ...c }))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to save family details", err);
+      failedSections.push("family details");
+    }
+  }
+
+  try {
+    await insertRow("candidate_application_history", {
+      candidate_id: candidate.id,
+      ...input.applicationHistory,
+    });
+  } catch (err) {
+    console.error("Failed to save application history", err);
+    failedSections.push("application history");
+  }
+
+  try {
+    await insertRow("candidate_offer_details", { candidate_id: candidate.id, ...input.offerDetails });
+  } catch (err) {
+    console.error("Failed to save offer details", err);
+    failedSections.push("offer details");
+  }
+
+  try {
+    await logTrackingEvent({
+      candidateId: candidate.id,
+      stage: candidate.status,
+      notes: "Application submitted.",
+    });
+  } catch (err) {
+    console.error("Failed to seed tracking history", err);
+  }
+
+  return { candidate, failedSections };
 }

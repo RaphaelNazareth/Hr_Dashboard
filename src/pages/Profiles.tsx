@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState,useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Search,
@@ -33,53 +33,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 // Utilities
 import { cn } from '@/lib/utils';
 
-// PocketBase
-import PocketBase from 'pocketbase';
-import type { RecordModel } from 'pocketbase';
-
-const pb = new PocketBase(
-  import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
-);
-pb.autoCancellation(false); // tambahin ini
-
-const TRACKING_COLLECTION = 'Candidate_Tracking';
-
-// ---- Types -----------------------------------------------------------
-
-interface Candidate extends RecordModel {
-  Candidate_ID: string;
-  First_Name: string;
-  Last_Name: string;
-  Age: number;
-  email: string;
-  Phone_Number: string;
-  City: string;
-  Applied_Position: string;
-  Experience: string;
-  Education: string;
-  School: string;
-  Skills: string;
-  Resume_Input: string;
-  Notice_Period: string;
-  Status: string;
-  Is_18_Plus: boolean;
-  Legal_Right_To_Work: boolean;
-  Former_Current_Mattel_Employee: boolean;
-  Notes?: string;
-  date: string;
-}
+// Supabase-backed data layer
+import {
+  fetchCandidateById,
+  searchCandidates,
+  fetchTrackingHistory,
+  addCandidateNote,
+  NOTE_STAGE,
+} from '@/lib/candidateBoard';
+import type { CandidateRecord, TrackingRecord } from '@/lib/candidateBoard';
 
 type TabKey = 'about' | 'resume' | 'notes' | 'history' | 'interview';
-
-// A row from the Candidate_Tracking collection — one entry per stage change,
-// linked back to this candidate via the candidate_id relation.
-interface TrackingEntry extends RecordModel {
-  candidate_id: string;
-  Applied_Position: string;
-  Stage: string;
-  Date: string;
-  Notes: string;
-}
 
 const TABS: { key: TabKey; label: string; icon: typeof UserIcon }[] = [
   { key: 'about', label: 'About', icon: UserIcon },
@@ -107,23 +71,7 @@ function formatDateTime(iso: string) {
     minute: '2-digit',
   });
 }
-function buildCandidateSearchFilter(rawQuery: string) {
-  const terms = rawQuery
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
 
-  if (terms.length === 0) return '';
-
-  const escape = (term: string) => term.replace(/"/g, '\\"');
-
-  const termClauses = terms.map((term) => {
-    const t = escape(term);
-    return `(First_Name ~ "${t}" || Last_Name ~ "${t}" || email ~ "${t}" || Applied_Position ~ "${t}" || Candidate_ID ~ "${t}")`;
-  });
-
-  return termClauses.join(' && ');
-}
 function statusVariantClass(status: string) {
   const s = (status || '').toLowerCase();
   if (s.includes('reject'))
@@ -146,16 +94,18 @@ export function ProfilesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [query, setQuery] = useState('');
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidates, setCandidates] = useState<CandidateRecord[]>([]);
   const [loadingList, setLoadingList] = useState(true);
-  const [selected, setSelected] = useState<Candidate | null>(null);
+  const [selected, setSelected] = useState<CandidateRecord | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('about');
 
-  const [notesDraft, setNotesDraft] = useState('');
-  const [savingNotes, setSavingNotes] = useState(false);
-  const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
+  // Notes are modeled as append-only candidate_tracking entries
+  // (stage = "Note") since the schema has no free-text notes column.
+  const [noteDraft, setNoteDraft] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteSavedAt, setNoteSavedAt] = useState<number | null>(null);
 
-  const [trackingLogs, setTrackingLogs] = useState<TrackingEntry[]>([]);
+  const [trackingLogs, setTrackingLogs] = useState<TrackingRecord[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
 
@@ -164,15 +114,11 @@ export function ProfilesPage() {
     const handle = setTimeout(async () => {
       setLoadingList(true);
       try {
-        const filter = buildCandidateSearchFilter(query);
-        const result = await pb.collection('Operator_dataset').getList<Candidate>(1, 50, {
-          filter,
-          sort: '-date',
-        });
+        const results = await searchCandidates(query);
         if (!cancelled) {
-          setCandidates(result.items);
+          setCandidates(results);
           if (selected) {
-            const stillThere = result.items.find((c) => c.id === selected.id);
+            const stillThere = results.find((c) => c.id === selected.id);
             if (stillThere) setSelected(stillThere);
           }
         }
@@ -190,15 +136,15 @@ export function ProfilesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  function selectCandidate(candidate: Candidate) {
+  function selectCandidate(candidate: CandidateRecord) {
     setSelected(candidate);
     setActiveTab('about');
-    setNotesDraft(candidate.Notes ?? '');
-    setNotesSavedAt(null);
+    setNoteDraft('');
+    setNoteSavedAt(null);
   }
 
-  // Pull the stage-change / interview log for whichever candidate is open —
-  // this feeds both the History tab and the Interview tab below.
+  // Pull the stage-change / note / interview log for whichever candidate is
+  // open — this feeds the History, Notes, and Interview tabs below.
   useEffect(() => {
     if (!selected) {
       setTrackingLogs([]);
@@ -209,11 +155,7 @@ export function ProfilesPage() {
     setLoadingLogs(true);
     setLogsError(null);
 
-    pb.collection(TRACKING_COLLECTION)
-      .getFullList<TrackingEntry>({
-        filter: `candidate_id = "${selected.id}"`,
-        sort: '-Date',
-      })
+    fetchTrackingHistory(selected.id)
       .then((entries) => {
         if (!cancelled) setTrackingLogs(entries);
       })
@@ -233,7 +175,7 @@ export function ProfilesPage() {
   // Deep link from Candidates: fetch the exact record by id, drop it into the
   // list (in case it isn't among the current search results), select it, and
   // seed the search box with their name so it's visible in context.
-   const lastFetchedCandidateId = useRef<string | null>(null);  
+  const lastFetchedCandidateId = useRef<string | null>(null);
   useEffect(() => {
     const candidateId = searchParams.get('candidateId');
     if (!candidateId) return;
@@ -243,13 +185,13 @@ export function ProfilesPage() {
 
     (async () => {
       try {
-        const candidate = await pb.collection('Operator_dataset').getOne<Candidate>(candidateId);
-        
+        const candidate = await fetchCandidateById(candidateId);
+
         if (cancelled) return;
 
         setCandidates((prev) => (prev.some((c) => c.id === candidate.id) ? prev : [candidate, ...prev]));
         selectCandidate(candidate);
-        setQuery(`${candidate.First_Name} ${candidate.Last_Name}`.trim());
+        setQuery(`${candidate.first_name} ${candidate.last_name}`.trim());
 
         // Strip the param so it doesn't re-trigger on subsequent renders/back-nav.
         const next = new URLSearchParams(searchParams);
@@ -266,40 +208,35 @@ export function ProfilesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  async function saveNotes() {
-    if (!selected) return;
-    setSavingNotes(true);
+  async function saveNote() {
+    if (!selected || !noteDraft.trim()) return;
+    setSavingNote(true);
     try {
-      const updated = await pb
-        .collection('Operator_dataset')
-        .update<Candidate>(selected.id, { Notes: notesDraft });
-      setSelected(updated);
-      setCandidates((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      setNotesSavedAt(Date.now());
+      const entry = await addCandidateNote(selected.id, noteDraft.trim());
+      setTrackingLogs((prev) => [entry, ...prev]);
+      setNoteDraft('');
+      setNoteSavedAt(Date.now());
     } catch (err) {
-      console.error('Failed to save notes', err);
+      console.error('Failed to save note', err);
     } finally {
-      setSavingNotes(false);
+      setSavingNote(false);
     }
   }
 
-  // Autosave: once the HR user pauses typing for a beat, persist the note to
-  // the database automatically so it's never lost just because "Save" wasn't
-  // clicked. A blur-triggered save (below, on the Textarea) covers the case
-  // where they click away immediately after typing.
-  useEffect(() => {
-    if (!selected) return;
-    if (notesDraft === (selected.Notes ?? '')) return;
-
-    const handle = setTimeout(() => {
-      saveNotes();
-    }, 1200);
-
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notesDraft, selected?.id]);
-
   const listCount = useMemo(() => candidates.length, [candidates]);
+
+  const noteEntries = useMemo(
+    () => trackingLogs.filter((entry) => entry.stage === NOTE_STAGE),
+    [trackingLogs]
+  );
+  const stageHistory = useMemo(
+    () => trackingLogs.filter((entry) => entry.stage !== NOTE_STAGE),
+    [trackingLogs]
+  );
+  const interviewLogs = useMemo(
+    () => stageHistory.filter((entry) => entry.stage.toLowerCase().includes('interview')),
+    [stageHistory]
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -355,24 +292,24 @@ export function ProfilesPage() {
                     >
                       <Avatar className="h-10 w-10 shrink-0">
                         <AvatarFallback className="text-sm font-medium">
-                          {initials(c.First_Name, c.Last_Name)}
+                          {initials(c.first_name, c.last_name)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">
-                          {c.First_Name} {c.Last_Name}
+                          {c.first_name} {c.last_name}
                         </p>
                         <p className="truncate text-xs text-muted-foreground">
-                          {c.Applied_Position}
+                          {c.applied_position}
                         </p>
                       </div>
                       <Badge
                         className={cn(
                           'shrink-0 border-0 text-[10px] font-medium',
-                          statusVariantClass(c.Status)
+                          statusVariantClass(c.status)
                         )}
                       >
-                        {c.Status || '—'}
+                        {c.status || '—'}
                       </Badge>
                     </button>
                   );
@@ -395,29 +332,29 @@ export function ProfilesPage() {
                 <div className="mb-6 flex items-start gap-4">
                   <Avatar className="h-16 w-16 shrink-0">
                     <AvatarFallback className="text-xl font-semibold">
-                      {initials(selected.First_Name, selected.Last_Name)}
+                      {initials(selected.first_name, selected.last_name)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-3">
                       <h2 className="text-xl font-semibold text-foreground">
-                        {selected.First_Name} {selected.Last_Name}
+                        {selected.first_name} {selected.last_name}
                       </h2>
-                      <Badge className={cn('border-0 font-medium', statusVariantClass(selected.Status))}>
-                        {selected.Status || 'Unknown'}
+                      <Badge className={cn('border-0 font-medium', statusVariantClass(selected.status))}>
+                        {selected.status || 'Unknown'}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground">{selected.Applied_Position}</p>
+                    <p className="text-sm text-muted-foreground">{selected.applied_position}</p>
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <Mail className="h-3.5 w-3.5" /> {selected.email}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Phone className="h-3.5 w-3.5" /> {selected.Phone_Number}
+                        <Phone className="h-3.5 w-3.5" /> {selected.phone_number}
                       </span>
-                      {selected.City && (
+                      {selected.city && (
                         <span className="flex items-center gap-1">
-                          <MapPin className="h-3.5 w-3.5" /> {selected.City}
+                          <MapPin className="h-3.5 w-3.5" /> {selected.city}
                         </span>
                       )}
                     </div>
@@ -443,7 +380,7 @@ export function ProfilesPage() {
                       <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
                         <Briefcase className="h-4 w-4" /> Experience
                       </h3>
-                      <p className="text-sm text-muted-foreground">{selected.Experience || '—'}</p>
+                      <p className="text-sm text-muted-foreground">{selected.experience || '—'}</p>
                     </section>
 
                     <section>
@@ -451,15 +388,15 @@ export function ProfilesPage() {
                         <GraduationCap className="h-4 w-4" /> Education
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        {selected.Education || '—'}
-                        {selected.School ? ` · ${selected.School}` : ''}
+                        {selected.education || '—'}
+                        {selected.school ? ` · ${selected.school}` : ''}
                       </p>
                     </section>
 
                     <section>
                       <h3 className="mb-2 text-sm font-semibold text-foreground">Skills</h3>
                       <div className="flex flex-wrap gap-2">
-                        {(selected.Skills || '')
+                        {(selected.skills || '')
                           .split(',')
                           .map((s) => s.trim())
                           .filter(Boolean)
@@ -468,7 +405,7 @@ export function ProfilesPage() {
                               {skill}
                             </Badge>
                           ))}
-                        {!selected.Skills && (
+                        {!selected.skills && (
                           <span className="text-sm text-muted-foreground">—</span>
                         )}
                       </div>
@@ -477,36 +414,36 @@ export function ProfilesPage() {
                     <section className="grid grid-cols-2 gap-4 rounded-lg bg-muted/40 p-4 text-sm">
                       <div>
                         <p className="text-muted-foreground">Age</p>
-                        <p className="font-medium text-foreground">{selected.Age ?? '—'}</p>
+                        <p className="font-medium text-foreground">{selected.age ?? '—'}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Notice Period</p>
                         <p className="font-medium text-foreground">
-                          {selected.Notice_Period || '—'}
+                          {selected.notice_period || '—'}
                         </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">18+ Confirmed</p>
                         <p className="font-medium text-foreground">
-                          {selected.Is_18_Plus ? 'Yes' : 'No'}
+                          {selected.is_18_plus ? 'Yes' : 'No'}
                         </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Legal Right to Work</p>
                         <p className="font-medium text-foreground">
-                          {selected.Legal_Right_To_Work ? 'Yes' : 'No'}
+                          {selected.legal_right_to_work ? 'Yes' : 'No'}
                         </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Former/Current Mattel Employee</p>
                         <p className="font-medium text-foreground">
-                          {selected.Former_Current_Mattel_Employee ? 'Yes' : 'No'}
+                          {selected.former_current_mattel_employee ? 'Yes' : 'No'}
                         </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Applied On</p>
                         <p className="font-medium text-foreground">
-                          {selected.date ? new Date(selected.date).toLocaleDateString() : '—'}
+                          {selected.applied_at ? new Date(selected.applied_at).toLocaleDateString() : '—'}
                         </p>
                       </div>
                     </section>
@@ -514,13 +451,18 @@ export function ProfilesPage() {
 
                   <TabsContent value="resume">
                     <div className="rounded-lg border p-4">
-                      {selected.Resume_Input ? (
-                        <pre className="whitespace-pre-wrap font-sans text-sm text-muted-foreground">
-                          {selected.Resume_Input}
-                        </pre>
+                      {selected.resume_path ? (
+                        <a
+                          href={selected.resume_path}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sm text-primary underline underline-offset-2"
+                        >
+                          View resume file
+                        </a>
                       ) : (
                         <p className="text-sm text-muted-foreground">
-                          No resume content on file.
+                          No resume on file.
                         </p>
                       )}
                     </div>
@@ -528,30 +470,49 @@ export function ProfilesPage() {
 
                   <TabsContent value="notes">
                     <Textarea
-                      value={notesDraft}
-                      onChange={(e) => setNotesDraft(e.target.value)}
-                      onBlur={() => {
-                        if (selected && notesDraft !== (selected.Notes ?? '')) saveNotes();
-                      }}
-                      placeholder="Add notes about this candidate..."
-                      rows={8}
+                      value={noteDraft}
+                      onChange={(e) => setNoteDraft(e.target.value)}
+                      placeholder="Add a note about this candidate..."
+                      rows={4}
                     />
                     <div className="mt-3 flex items-center gap-3">
-                      <Button onClick={saveNotes} disabled={savingNotes} size="sm" className="gap-1.5">
-                        {savingNotes ? (
+                      <Button
+                        onClick={saveNote}
+                        disabled={savingNote || !noteDraft.trim()}
+                        size="sm"
+                        className="gap-1.5"
+                      >
+                        {savingNote ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <Save className="h-3.5 w-3.5" />
                         )}
-                        Save Notes
+                        Add Note
                       </Button>
-                      {savingNotes && (
+                      {savingNote && (
                         <span className="text-xs text-muted-foreground">Saving…</span>
                       )}
-                      {!savingNotes && notesSavedAt && (
-                        <span className="text-xs text-muted-foreground">
-                          Saved — this will show up next time you open this profile
-                        </span>
+                      {!savingNote && noteSavedAt && (
+                        <span className="text-xs text-muted-foreground">Note added</span>
+                      )}
+                    </div>
+
+                    <div className="mt-6 space-y-4">
+                      {loadingLogs ? (
+                        <div className="flex items-center justify-center py-6 text-muted-foreground">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        </div>
+                      ) : noteEntries.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No notes yet.</p>
+                      ) : (
+                        noteEntries.map((entry) => (
+                          <div key={entry.id} className="rounded-lg border p-3">
+                            <p className="text-xs text-muted-foreground">
+                              {formatDateTime(entry.moved_at)}
+                            </p>
+                            <p className="mt-1 text-sm text-foreground">{entry.notes}</p>
+                          </div>
+                        ))
                       )}
                     </div>
                   </TabsContent>
@@ -565,27 +526,24 @@ export function ProfilesPage() {
                       <div className="rounded-lg border border-dashed p-8 text-center text-sm text-destructive">
                         {logsError}
                       </div>
-                    ) : trackingLogs.length === 0 ? (
+                    ) : stageHistory.length === 0 ? (
                       <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
                         No history yet. This will populate as the candidate moves through the
                         pipeline.
                       </div>
                     ) : (
                       <ol className="relative space-y-6 border-l pl-6">
-                        {trackingLogs.map((entry) => (
+                        {stageHistory.map((entry) => (
                           <li key={entry.id} className="relative">
                             <span className="absolute -left-[27px] top-1 h-2.5 w-2.5 rounded-full bg-primary" />
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-sm font-medium text-foreground">{entry.Stage || 'Unknown stage'}</p>
+                              <p className="text-sm font-medium text-foreground">{entry.stage || 'Unknown stage'}</p>
                               <span className="text-xs text-muted-foreground">
-                                {formatDateTime(entry.Date)}
+                                {formatDateTime(entry.moved_at)}
                               </span>
                             </div>
-                            {entry.Applied_Position && (
-                              <p className="text-xs text-muted-foreground">{entry.Applied_Position}</p>
-                            )}
-                            {entry.Notes && (
-                              <p className="mt-1 text-sm text-muted-foreground">{entry.Notes}</p>
+                            {entry.notes && (
+                              <p className="mt-1 text-sm text-muted-foreground">{entry.notes}</p>
                             )}
                           </li>
                         ))}
@@ -598,37 +556,27 @@ export function ProfilesPage() {
                       <div className="flex items-center justify-center py-10 text-muted-foreground">
                         <Loader2 className="h-5 w-5 animate-spin" />
                       </div>
+                    ) : interviewLogs.length === 0 ? (
+                      <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+                        No interview scheduled yet.
+                      </div>
                     ) : (
-                      (() => {
-                        const interviewLogs = trackingLogs.filter((entry) =>
-                          (entry.Stage || '').toLowerCase().includes('interview')
-                        );
-                        if (interviewLogs.length === 0) {
-                          return (
-                            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-                              No interview scheduled yet.
+                      <div className="space-y-3">
+                        {interviewLogs.map((entry) => (
+                          <div key={entry.id} className="rounded-lg border p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-foreground">{entry.stage}</p>
+                              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <CalendarClock className="h-3.5 w-3.5" />
+                                {formatDateTime(entry.moved_at)}
+                              </span>
                             </div>
-                          );
-                        }
-                        return (
-                          <div className="space-y-3">
-                            {interviewLogs.map((entry) => (
-                              <div key={entry.id} className="rounded-lg border p-4">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <p className="text-sm font-semibold text-foreground">{entry.Stage}</p>
-                                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                    <CalendarClock className="h-3.5 w-3.5" />
-                                    {formatDateTime(entry.Date)}
-                                  </span>
-                                </div>
-                                {entry.Notes && (
-                                  <p className="mt-2 text-sm text-muted-foreground">{entry.Notes}</p>
-                                )}
-                              </div>
-                            ))}
+                            {entry.notes && (
+                              <p className="mt-2 text-sm text-muted-foreground">{entry.notes}</p>
+                            )}
                           </div>
-                        );
-                      })()
+                        ))}
+                      </div>
                     )}
                   </TabsContent>
                 </Tabs>

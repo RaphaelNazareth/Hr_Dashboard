@@ -7,7 +7,7 @@ import { useFocusMode } from '@/contexts/FocusModeContext';
 import { storage } from '@/lib/utils';
 import { useState, useEffect, useMemo, type FC } from 'react';
 import { useNavigate } from 'react-router-dom';
-import PocketBase from 'pocketbase';
+import { createClient } from '@supabase/supabase-js';
 import {
   BarChart,
   Bar,
@@ -25,34 +25,54 @@ import {
 } from 'recharts';
 
 // ---------------------------------------------------------------------------
-// PocketBase client
+// Supabase client
 // ---------------------------------------------------------------------------
-const pb = new PocketBase(
-  import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL as string,
+  import.meta.env.VITE_SUPABASE_ANON_KEY as string
 );
 
-const OPERATOR_COLLECTION = "Operator_dataset";
+const CANDIDATES_TABLE = 'candidates';
+
+// Columns pulled from public.candidates — only what the dashboard aggregates need.
+const CANDIDATES_SELECT = [
+  'id',
+  'age',
+  'city',
+  'education',
+  'school',
+  'skills',
+  'applied_position',
+  'experience',
+  'notice_period',
+  'status',
+  'is_18_plus',
+  'legal_right_to_work',
+  'former_current_mattel_employee',
+  'applied_at',
+  'created_at',
+].join(', ');
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface OperatorRecord {
+interface CandidateRecord {
   id: string;
-  Age: number;
-  City: string;
-  Education: string;
-  School: string;
-  Skills: string[] | string;
-  Applied_Position: string;
-  Experience: string | number;
-  Notice_Period: string;
-  Status: string;
-  Is_18_Plus: boolean;
-  Legal_Right_To_Work: boolean;
-  Former_Current_Mattel_Employee: boolean;
-  date: string; // application timestamp, ISO string
-  created: string;
+  age: number | null;
+  city: string | null;
+  education: string | null;
+  school: string | null;
+  skills: string | null; // comma-separated in this schema, no native array type
+  applied_position: string | null;
+  experience: string | number | null;
+  notice_period: string | null;
+  status: string;
+  is_18_plus: boolean;
+  legal_right_to_work: boolean;
+  former_current_mattel_employee: boolean;
+  applied_at: string; // ISO timestamp
+  created_at: string;
 }
 
 type DateRangePreset = 'this_month' | 'last_month' | 'quarter' | 'custom';
@@ -104,9 +124,8 @@ function formatDMY(d: Date) {
 // Aggregation helpers
 // ---------------------------------------------------------------------------
 
-function toArray(skills: string[] | string | undefined): string[] {
+function toArray(skills: string | null | undefined): string[] {
   if (!skills) return [];
-  if (Array.isArray(skills)) return skills;
   return skills.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
@@ -119,7 +138,7 @@ function bucketAge(age: number): string {
   return '55+';
 }
 
-function countBy<T>(items: T[], key: (item: T) => string | undefined): { label: string; count: number }[] {
+function countBy<T>(items: T[], key: (item: T) => string | null | undefined): { label: string; count: number }[] {
   const map = new Map<string, number>();
   for (const item of items) {
     const k = key(item) || 'Unspecified';
@@ -131,11 +150,11 @@ function countBy<T>(items: T[], key: (item: T) => string | undefined): { label: 
 }
 
 // ---------------------------------------------------------------------------
-// useRecruitmentData hook — fetches from PocketBase and computes all aggregates
+// useRecruitmentData hook — fetches from Supabase and computes all aggregates
 // ---------------------------------------------------------------------------
 
 function useRecruitmentData(range: DateRange) {
-  const [records, setRecords] = useState<OperatorRecord[]>([]);
+  const [records, setRecords] = useState<CandidateRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -147,19 +166,19 @@ function useRecruitmentData(range: DateRange) {
     const fromStr = range.from.toISOString();
     const toStr = range.to.toISOString();
 
-    pb.collection(OPERATOR_COLLECTION)
-      .getFullList<OperatorRecord>({
-        filter: `date >= "${fromStr}" && date <= "${toStr}"`,
-        sort: '-date',
-      })
-      .then((result) => {
-        if (!cancelled) setRecords(result);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err?.message || 'Failed to load recruitment data');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+    supabase
+      .from(CANDIDATES_TABLE)
+      .select(CANDIDATES_SELECT)
+      .gte('applied_at', fromStr)
+      .lte('applied_at', toStr)
+      .order('applied_at', { ascending: false })
+      .then(({ data, error: fetchError }) => {
+        if (cancelled) return;
+        if (fetchError) {
+          setError(fetchError.message || 'Failed to load recruitment data');
+          return;
+        }
+        setRecords((data as unknown as CandidateRecord[]) || []);
       });
 
     return () => {
@@ -167,26 +186,35 @@ function useRecruitmentData(range: DateRange) {
     };
   }, [range.from.getTime(), range.to.getTime()]);
 
+  useEffect(() => {
+    if (!error) return;
+    setLoading(false);
+  }, [error]);
+
+  useEffect(() => {
+    setLoading(false);
+  }, [records]);
+
   const aggregates = useMemo(() => {
     const total = records.length;
 
-    const eligibleCount = records.filter((r) => r.Is_18_Plus).length;
-    const rightToWorkCount = records.filter((r) => r.Legal_Right_To_Work).length;
-    const formerEmployeeCount = records.filter((r) => r.Former_Current_Mattel_Employee).length;
+    const eligibleCount = records.filter((r) => r.is_18_plus).length;
+    const rightToWorkCount = records.filter((r) => r.legal_right_to_work).length;
+    const formerEmployeeCount = records.filter((r) => r.former_current_mattel_employee).length;
 
-    const statusFunnel = countBy(records, (r) => r.Status).map((s) => ({ stage: s.label, count: s.count }));
+    const statusFunnel = countBy(records, (r) => r.status).map((s) => ({ stage: s.label, count: s.count }));
 
     const trendMap = new Map<string, number>();
     for (const r of records) {
-      if (!r.date) continue;
-      const day = r.date.slice(0, 10);
+      if (!r.applied_at) continue;
+      const day = r.applied_at.slice(0, 10);
       trendMap.set(day, (trendMap.get(day) || 0) + 1);
     }
     const trend = Array.from(trendMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([label, count]) => ({ label, count }));
 
-    const positionBreakdown = countBy(records, (r) => r.Applied_Position).map((p) => ({
+    const positionBreakdown = countBy(records, (r) => r.applied_position).map((p) => ({
       position: p.label,
       count: p.count,
     }));
@@ -194,24 +222,24 @@ function useRecruitmentData(range: DateRange) {
     const ageMap = new Map<string, number>();
     const bucketOrder = ['<18', '18-24', '25-34', '35-44', '45-54', '55+'];
     for (const r of records) {
-      if (typeof r.Age !== 'number' || Number.isNaN(r.Age)) continue;
-      const b = bucketAge(r.Age);
+      if (typeof r.age !== 'number' || Number.isNaN(r.age)) continue;
+      const b = bucketAge(r.age);
       ageMap.set(b, (ageMap.get(b) || 0) + 1);
     }
     const ageBuckets = bucketOrder.filter((b) => ageMap.has(b)).map((b) => ({ bucket: b, count: ageMap.get(b)! }));
 
-    const cityBreakdown = countBy(records, (r) => r.City)
+    const cityBreakdown = countBy(records, (r) => r.city)
       .slice(0, 8)
       .map((c) => ({ city: c.label, count: c.count }));
 
-    const educationBreakdown = countBy(records, (r) => r.Education).map((e) => ({
+    const educationBreakdown = countBy(records, (r) => r.education).map((e) => ({
       education: e.label,
       count: e.count,
     }));
 
     const skillsMap = new Map<string, number>();
     for (const r of records) {
-      for (const skill of toArray(r.Skills)) {
+      for (const skill of toArray(r.skills)) {
         skillsMap.set(skill, (skillsMap.get(skill) || 0) + 1);
       }
     }
@@ -220,7 +248,7 @@ function useRecruitmentData(range: DateRange) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 8);
 
-    const noticePeriodBreakdown = countBy(records, (r) => r.Notice_Period).map((n) => ({
+    const noticePeriodBreakdown = countBy(records, (r) => r.notice_period).map((n) => ({
       period: n.label,
       count: n.count,
     }));
@@ -724,6 +752,8 @@ export const Dashboard: FC = () => {
   // Chart → Candidates navigation
   // Clicking a chart segment routes to /candidates with the relevant filter
   // pre-applied via query params, which Candidates.tsx reads on mount.
+  // (Unchanged — same param names as before: status, position, city,
+  //  education, search, noticePeriod.)
   // -------------------------------------------------------------------------
   const goToCandidates = (filters: Record<string, string>) => {
     const params = new URLSearchParams(filters);

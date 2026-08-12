@@ -53,15 +53,17 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import {
-  pb,
-  OPERATOR_COLLECTION,
   DEFAULT_STAGE_NAMES,
   isInterviewStage,
+  fetchCandidates,
+  createCandidate,
+  updateCandidateStatus,
   logTrackingEvent,
+  createInterviewSchedule,
   matchesCandidateSearch,
   moveCandidates,
 } from "@/lib/candidateBoard";
-import type { OperatorRecord } from "@/lib/candidateBoard";
+import type { CandidateRecord, NewCandidateInput } from "@/lib/candidateBoard";
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -86,73 +88,72 @@ function buildDefaultStages(): Stage[] {
 type ViewMode = "card" | "list";
 
 // Fields collected in the "New Candidate" form. These map 1:1 to the
-// Operator_dataset columns (minus the ones we derive automatically:
-// id / created / updated / Candidate_ID / date).
+// public.candidates columns (minus the ones we derive automatically:
+// id / applied_at / created_at / updated_at / candidate_code).
 interface CandidateFormState {
-  First_Name: string;
-  Last_Name: string;
-  Age: string;
+  first_name: string;
+  last_name: string;
+  age: string;
   email: string;
-  Phone_Number: string;
-  City: string;
-  Applied_Position: string;
-  Experience: string;
-  Education: string;
-  School: string;
-  Skills: string;
-  Resume_Input: string;
-  Notice_Period: string;
-  Status: string;
-  Is_18_Plus: boolean;
-  Legal_Right_To_Work: boolean;
-  Former_Current_Mattel_Employee: boolean;
+  phone_number: string;
+  city: string;
+  applied_position: string;
+  experience: string;
+  education: string;
+  school: string;
+  skills: string;
+  notice_period: string;
+  status: string;
+  resume_path: string;
+  is_18_plus: boolean;
+  legal_right_to_work: boolean;
+  former_current_mattel_employee: boolean;
 }
 
 function buildEmptyCandidateForm(defaultStatus: string): CandidateFormState {
   return {
-    First_Name: "",
-    Last_Name: "",
-    Age: "",
+    first_name: "",
+    last_name: "",
+    age: "",
     email: "",
-    Phone_Number: "",
-    City: "",
-    Applied_Position: "",
-    Experience: "",
-    Education: "",
-    School: "",
-    Skills: "",
-    Resume_Input: "",
-    Notice_Period: "",
-    Status: defaultStatus,
-    Is_18_Plus: false,
-    Legal_Right_To_Work: false,
-    Former_Current_Mattel_Employee: false,
+    phone_number: "",
+    city: "",
+    applied_position: "",
+    experience: "",
+    education: "",
+    school: "",
+    skills: "",
+    notice_period: "",
+    status: defaultStatus,
+    resume_path: "",
+    is_18_plus: false,
+    legal_right_to_work: false,
+    former_current_mattel_employee: false,
   };
 }
 
 // A pending drag-into-an-interview-stage move, waiting on the user to give
-// (or skip) a scheduled time before we write the Candidate_Tracking entry.
+// (or skip) a scheduled time before we write the candidate_tracking /
+// interview_schedule rows.
 interface InterviewPrompt {
-  candidate: OperatorRecord;
+  candidate: CandidateRecord;
   stageName: string;
 }
 
-// Writes one row to Candidate_Tracking — this is what feeds the History and
-// Interview tabs on the candidate's profile.
 function formatGCalDate(dateTimeLocal: string) {
   // "2026-08-05T10:00" -> "20260805T100000"
   return `${dateTimeLocal.replace(/[-:]/g, "")}00`;
 }
 
 function buildGoogleCalendarUrl(
-  candidate: OperatorRecord,
+  candidate: CandidateRecord,
   stageName: string,
   startDateTime: string,
   endTime: string,
   notes: string
 ) {
   const title = encodeURIComponent(
-    `${stageName} - ${candidate.First_Name} ${candidate.Last_Name}`
+    `${stageName} - ${candidate.first_name} ${candidate.last_name}`
   );
 
   const startLabel = new Date(startDateTime).toLocaleTimeString([], {
@@ -182,6 +183,18 @@ function buildGoogleCalendarUrl(
   );
 }
 
+// Builds an ISO end timestamp from the same calendar date as the start,
+// combined with a plain HH:mm time input. Falls back to start + 1h.
+function buildEndIso(startDateTimeLocal: string, endTimeOnly: string) {
+  if (!endTimeOnly) {
+    return new Date(
+      new Date(startDateTimeLocal).getTime() + 60 * 60 * 1000
+    ).toISOString();
+  }
+  const datePart = startDateTimeLocal.split("T")[0];
+  return new Date(`${datePart}T${endTimeOnly}`).toISOString();
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -190,7 +203,7 @@ export const RecruitmentBoard: FC = () => {
   const navigate = useNavigate();
 
   const [stages, setStages] = useState<Stage[]>([]);
-  const [columns, setColumns] = useState<Record<string, OperatorRecord[]>>({});
+  const [columns, setColumns] = useState<Record<string, CandidateRecord[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("card");
@@ -286,7 +299,7 @@ export const RecruitmentBoard: FC = () => {
     setColumnSearch((prev) => ({ ...prev, [stageId]: value }));
   }
 
-  function openCandidateProfile(candidate: OperatorRecord) {
+  function openCandidateProfile(candidate: CandidateRecord) {
     navigate(`/profiles?candidateId=${candidate.id}`);
   }
 
@@ -301,18 +314,16 @@ export const RecruitmentBoard: FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const candidateRecords = await pb
-        .collection(OPERATOR_COLLECTION)
-        .getFullList<OperatorRecord>({ sort: "-date" });
+      const candidateRecords = await fetchCandidates();
 
       const localStages = buildDefaultStages();
 
-      const grouped: Record<string, OperatorRecord[]> = {};
+      const grouped: Record<string, CandidateRecord[]> = {};
       localStages.forEach((s) => (grouped[s.id] = []));
       grouped[UNASSIGNED_ID] = [];
 
       for (const candidate of candidateRecords) {
-        const match = localStages.find((s) => s.name === candidate.Status);
+        const match = localStages.find((s) => s.name === candidate.status);
         if (match) {
           grouped[match.id].push(candidate);
         } else {
@@ -324,7 +335,7 @@ export const RecruitmentBoard: FC = () => {
       setColumns(grouped);
     } catch (err) {
       console.error(err);
-      setError("Couldn't load the recruitment board. Check your PocketBase connection.");
+      setError("Couldn't load the recruitment board. Check your Supabase connection.");
     } finally {
       setLoading(false);
     }
@@ -342,19 +353,19 @@ export const RecruitmentBoard: FC = () => {
   const allCandidates = useMemo(() => Object.values(columns).flat(), [columns]);
 
   const positionOptions = useMemo(
-    () => Array.from(new Set(allCandidates.map((c) => c.Applied_Position).filter(Boolean))).sort(),
+    () => Array.from(new Set(allCandidates.map((c) => c.applied_position).filter(Boolean))).sort() as string[],
     [allCandidates]
   );
   const cityOptions = useMemo(
-    () => Array.from(new Set(allCandidates.map((c) => c.City).filter(Boolean))).sort(),
+    () => Array.from(new Set(allCandidates.map((c) => c.city).filter(Boolean))).sort() as string[],
     [allCandidates]
   );
   const educationOptions = useMemo(
-    () => Array.from(new Set(allCandidates.map((c) => c.Education).filter(Boolean))).sort(),
+    () => Array.from(new Set(allCandidates.map((c) => c.education).filter(Boolean))).sort() as string[],
     [allCandidates]
   );
   const noticePeriodOptions = useMemo(
-    () => Array.from(new Set(allCandidates.map((c) => c.Notice_Period).filter(Boolean))).sort(),
+    () => Array.from(new Set(allCandidates.map((c) => c.notice_period).filter(Boolean))).sort() as string[],
     [allCandidates]
   );
 
@@ -424,7 +435,7 @@ export const RecruitmentBoard: FC = () => {
     const positions = new Set<string>();
     Object.values(columns)
       .flat()
-      .forEach((c) => c.Applied_Position && positions.add(c.Applied_Position));
+      .forEach((c) => c.applied_position && positions.add(c.applied_position));
     return positions.size;
   }, [columns]);
 
@@ -446,21 +457,21 @@ export const RecruitmentBoard: FC = () => {
     // Grab the candidate + destination stage before mutating state, so we
     // know what (and whether) to log once the move lands.
     const sourceList = columns[sourceId] ?? [];
-    const movingCandidate = sourceList.find(c => c.id === draggableId);
+    const movingCandidate = sourceList.find((c) => c.id === draggableId);
     const destStage = orderedStages.find((s) => s.id === destId);
 
     setColumns((prev) => {
       const sourceItems = Array.from(prev[sourceId] ?? []);
-      
+
       // Find the real index by ID (not by the filtered visual index)
-      const realSourceIndex = sourceItems.findIndex(c => c.id === draggableId);
+      const realSourceIndex = sourceItems.findIndex((c) => c.id === draggableId);
       if (realSourceIndex === -1) return prev;
 
       const [moved] = sourceItems.splice(realSourceIndex, 1);
 
       const destItems =
         sourceId === destId ? sourceItems : Array.from(prev[destId] ?? []);
-      
+
       // Still using destination.index for now (visual drop position)
       destItems.splice(destination.index, 0, moved);
 
@@ -472,25 +483,21 @@ export const RecruitmentBoard: FC = () => {
     });
 
     if (sourceId !== destId && destId !== UNASSIGNED_ID && destStage && movingCandidate) {
-      pb.collection(OPERATOR_COLLECTION)
-        .update(draggableId, { Status: destStage.name })
-        .catch((err) => {
-          console.error("Failed to update candidate status", err);
-          setError("Couldn't save that move — please refresh and try again.");
-        });
+      updateCandidateStatus(draggableId, destStage.name).catch((err) => {
+        console.error("Failed to update candidate status", err);
+        setError("Couldn't save that move — please refresh and try again.");
+      });
 
       if (isInterviewStage(destStage.name)) {
-        // Hold off on the tracking entry until we know when the interview
-        // is scheduled for.
+        // Hold off on the tracking / interview_schedule entries until we
+        // know when the interview is scheduled for.
         setInterviewDateTime("");
         setInterviewEndTime("");
         setInterviewNotes("");
         setInterviewPrompt({ candidate: movingCandidate, stageName: destStage.name });
-        
       } else {
         logTrackingEvent({
           candidateId: movingCandidate.id,
-          position: movingCandidate.Applied_Position,
           stage: destStage.name,
           date: new Date().toISOString(),
         }).catch((err) => {
@@ -519,7 +526,7 @@ export const RecruitmentBoard: FC = () => {
         const destId = destStage ? destStage.id : UNASSIGNED_ID;
 
         setColumns((prev) => {
-          const next: Record<string, OperatorRecord[]> = {};
+          const next: Record<string, CandidateRecord[]> = {};
           for (const [stageId, list] of Object.entries(prev)) {
             next[stageId] = list.filter((c) => !succeededById.has(c.id));
           }
@@ -548,93 +555,112 @@ export const RecruitmentBoard: FC = () => {
     const rangeLine = `Time: ${timeRange}`;
     return baseNotes ? `${rangeLine}\n${baseNotes}` : rangeLine;
   }
-  async function handleConfirmInterview(e: FormEvent) {
-  e.preventDefault();
-  if (!interviewPrompt) return;
 
-  setSchedulingInterview(true);
-  try {
-    await logTrackingEvent({
-      candidateId: interviewPrompt.candidate.id,
-      position: interviewPrompt.candidate.Applied_Position,
-      stage: interviewPrompt.stageName,
-      date: interviewDateTime
-        ? new Date(interviewDateTime).toISOString()
-        : new Date().toISOString(),
-      notes: buildInterviewNotes(interviewNotes.trim()),
+  // Writes the candidate_tracking history row and, when a start time was
+  // given, the matching interview_schedule row (linked via tracking_id).
+  async function persistInterview() {
+    if (!interviewPrompt) return;
+    const { candidate, stageName } = interviewPrompt;
+    const notes = buildInterviewNotes(interviewNotes.trim());
+    const movedAt = interviewDateTime
+      ? new Date(interviewDateTime).toISOString()
+      : new Date().toISOString();
+
+    const tracking = await logTrackingEvent({
+      candidateId: candidate.id,
+      stage: stageName,
+      date: movedAt,
+      notes,
+    });
+
+    if (interviewDateTime) {
+      try {
+        await createInterviewSchedule({
+          candidateId: candidate.id,
+          trackingId: tracking.id,
+          stage: stageName,
+          startTime: new Date(interviewDateTime).toISOString(),
+          endTime: buildEndIso(interviewDateTime, interviewEndTime),
+          notes: interviewNotes.trim() || undefined,
+        });
+      } catch (err) {
+        console.error("Failed to create interview_schedule row", err);
+        setError("Stage change was saved, but the interview schedule entry failed.");
+      }
+    }
+  }
+
+  async function handleConfirmInterview(e: FormEvent) {
+    e.preventDefault();
+    if (!interviewPrompt) return;
+
+    setSchedulingInterview(true);
+    try {
+      await persistInterview();
+      setInterviewPrompt(null);
+    } catch (err) {
+      console.error("Failed to schedule interview", err);
+      setError("Couldn't save the interview time — please try again from the profile.");
+    } finally {
+      setSchedulingInterview(false);
+    }
+  }
+
+  function handleSkipInterviewTime() {
+    if (!interviewPrompt) return;
+    persistInterview().catch((err) => {
+      console.error("Failed to log tracking event", err);
+      setError("Couldn't record that stage change in the candidate's history.");
     });
     setInterviewPrompt(null);
-  } catch (err) {
-    console.error("Failed to schedule interview", err);
-    setError("Couldn't save the interview time — please try again from the profile.");
-  } finally {
-    setSchedulingInterview(false);
-  }
-}
-
-function handleSkipInterviewTime() {
-  if (!interviewPrompt) return;
-  logTrackingEvent({
-    candidateId: interviewPrompt.candidate.id,
-    position: interviewPrompt.candidate.Applied_Position,
-    stage: interviewPrompt.stageName,
-    date: interviewDateTime
-      ? new Date(interviewDateTime).toISOString()
-      : new Date().toISOString(),
-    notes: buildInterviewNotes(interviewNotes.trim()),
-  }).catch((err) => {
-    console.error("Failed to log tracking event", err);
-    setError("Couldn't record that stage change in the candidate's history.");
-  });
-  setInterviewPrompt(null);
-}
-
-function handleAddToGoogleCalendar() {
-  if (!interviewPrompt || !interviewDateTime) return;
-  const { candidate, stageName } = interviewPrompt;
-
-  const url = buildGoogleCalendarUrl(
-    candidate,
-    stageName,
-    interviewDateTime,
-    interviewEndTime,
-    interviewNotes.trim()
-  );
-
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
-async function handleSendInterviewEmail() {
-  if (!interviewPrompt) return;
-  const { candidate, stageName } = interviewPrompt;
-
-  if (!candidate.email) {
-    setError("Kandidat ini belum ada email-nya di database.");
-    return;
   }
 
-  setSendingEmail(true);
-  try {
-    const res = await fetch("http://127.0.0.1:8000/api/send-interview-email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: candidate.email,
-        candidateName: `${candidate.First_Name} ${candidate.Last_Name}`,
-        stageName,
-        startDateTime: interviewDateTime,
-        endTime: interviewEndTime,
-        notes: interviewNotes.trim(),
-      }),
-    });
-    if (!res.ok) throw new Error("Request failed");
-  } catch (err) {
-    console.error("Failed to email candidate", err);
-    setError("Gagal kirim email ke kandidat — kabari manual dulu ya.");
-  } finally {
-    setSendingEmail(false);
+  function handleAddToGoogleCalendar() {
+    if (!interviewPrompt || !interviewDateTime) return;
+    const { candidate, stageName } = interviewPrompt;
+
+    const url = buildGoogleCalendarUrl(
+      candidate,
+      stageName,
+      interviewDateTime,
+      interviewEndTime,
+      interviewNotes.trim()
+    );
+
+    window.open(url, "_blank", "noopener,noreferrer");
   }
-}
+
+  async function handleSendInterviewEmail() {
+    if (!interviewPrompt) return;
+    const { candidate, stageName } = interviewPrompt;
+
+    if (!candidate.email) {
+      setError("Kandidat ini belum ada email-nya di database.");
+      return;
+    }
+
+    setSendingEmail(true);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/send-interview-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: candidate.email,
+          candidateName: `${candidate.first_name} ${candidate.last_name}`,
+          stageName,
+          startDateTime: interviewDateTime,
+          endTime: interviewEndTime,
+          notes: interviewNotes.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error("Request failed");
+    } catch (err) {
+      console.error("Failed to email candidate", err);
+      setError("Gagal kirim email ke kandidat — kabari manual dulu ya.");
+    } finally {
+      setSendingEmail(false);
+    }
+  }
 
   // -- Column management -------------------------------------------------
 
@@ -648,7 +674,7 @@ async function handleSendInterviewEmail() {
     // Order is always derived from the fixed stage list, so columns stay in
     // canonical pipeline order (Applied -> ... -> Rejected) no matter what
     // sequence they're added in.
-    const order = DEFAULT_STAGE_NAMES.indexOf(newColumnName);
+    const order = DEFAULT_STAGE_NAMES.indexOf(newColumnName as (typeof DEFAULT_STAGE_NAMES)[number]);
     const localId = `local-${Date.now()}`;
 
     setStages((prev) => [...prev, { id: localId, name: newColumnName, order }]);
@@ -692,42 +718,61 @@ async function handleSendInterviewEmail() {
   async function handleCreateCandidate(e: FormEvent) {
     e.preventDefault();
 
-    if (!candidateForm.First_Name.trim() || !candidateForm.Last_Name.trim()) {
+    if (!candidateForm.first_name.trim() || !candidateForm.last_name.trim()) {
       setFormError("First name and last name are required.");
+      return;
+    }
+    if (!candidateForm.email.trim()) {
+      setFormError("Email is required.");
       return;
     }
 
     setSubmitting(true);
     setFormError(null);
 
-    const payload = {
-      Candidate_ID: `CAND-${Date.now()}`,
-      First_Name: candidateForm.First_Name.trim(),
-      Last_Name: candidateForm.Last_Name.trim(),
-      Age: Number(candidateForm.Age) || 0,
+    const payload: NewCandidateInput = {
+      candidate_code: `CAND-${Date.now()}`,
+      first_name: candidateForm.first_name.trim(),
+      last_name: candidateForm.last_name.trim(),
+      age: candidateForm.age ? Number(candidateForm.age) : null,
+      gender: null,
+      place_of_birth: null,
+      date_of_birth: null,
       email: candidateForm.email.trim(),
-      Phone_Number: candidateForm.Phone_Number.trim(),
-      City: candidateForm.City.trim(),
-      Applied_Position: candidateForm.Applied_Position.trim(),
-      Experience: candidateForm.Experience.trim(),
-      Education: candidateForm.Education.trim(),
-      School: candidateForm.School.trim(),
-      Skills: candidateForm.Skills.trim(),
-      Resume_Input: candidateForm.Resume_Input.trim(),
-      Notice_Period: candidateForm.Notice_Period.trim(),
-      Status: candidateForm.Status,
-      Is_18_Plus: candidateForm.Is_18_Plus,
-      Legal_Right_To_Work: candidateForm.Legal_Right_To_Work,
-      Former_Current_Mattel_Employee: candidateForm.Former_Current_Mattel_Employee,
-      date: new Date().toISOString(),
+      phone_number: candidateForm.phone_number.trim() || null,
+      mobile_phone_wa: null,
+      identity_card_number: null,
+      family_card_number: null,
+      religion: null,
+      marital_status: null,
+      city: candidateForm.city.trim() || null,
+      applied_position: candidateForm.applied_position.trim() || null,
+      job_id: null,
+      experience: candidateForm.experience.trim() || null,
+      education: candidateForm.education.trim() || null,
+      school: candidateForm.school.trim() || null,
+      skills: candidateForm.skills.trim() || null,
+      certificates: null,
+      languages: null,
+      notice_period: candidateForm.notice_period.trim() || null,
+      status: candidateForm.status as NewCandidateInput["status"],
+      resume_path: candidateForm.resume_path.trim() || null,
+      ktp_path: null,
+      is_18_plus: candidateForm.is_18_plus,
+      legal_right_to_work: candidateForm.legal_right_to_work,
+      former_current_mattel_employee: candidateForm.former_current_mattel_employee,
+      // This quick-add form doesn't collect consent — it's for recruiters
+      // manually adding a candidate, not the public application flow, which
+      // is where these actually get captured (ApplyPage).
+      consent_data_collection: true,
+      consent_data_usage: true,
+      consent_data_retention: true,
     };
 
     try {
-      const created = await pb
-        .collection(OPERATOR_COLLECTION)
-        .create<OperatorRecord>(payload);
+      const created = await createCandidate(payload);
 
-      const targetStage = orderedStages.find((s) => s.name === created.Status);
+      const targetStage = orderedStages.find((s) => s.name === created.status);
       const bucketId = targetStage ? targetStage.id : UNASSIGNED_ID;
 
       setColumns((prev) => ({
@@ -738,9 +783,8 @@ async function handleSendInterviewEmail() {
       // Seed the candidate's history with their starting stage.
       logTrackingEvent({
         candidateId: created.id,
-        position: created.Applied_Position,
-        stage: created.Status,
-        date: created.date,
+        stage: created.status,
+        date: created.applied_at,
         notes: "Candidate added to the pipeline.",
       }).catch((err) => {
         console.error("Failed to log initial tracking event", err);
@@ -1146,7 +1190,7 @@ async function handleSendInterviewEmail() {
           <DialogHeader>
             <DialogTitle>New Candidate</DialogTitle>
             <DialogDescription>
-              Fields map directly to the Operator_dataset columns.
+              Fields map directly to the public.candidates columns.
             </DialogDescription>
           </DialogHeader>
 
@@ -1158,98 +1202,99 @@ async function handleSendInterviewEmail() {
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="First name" htmlFor="First_Name" required>
+              <Field label="First name" htmlFor="first_name" required>
                 <Input
-                  id="First_Name"
-                  value={candidateForm.First_Name}
-                  onChange={(e) => updateCandidateField("First_Name", e.target.value)}
+                  id="first_name"
+                  value={candidateForm.first_name}
+                  onChange={(e) => updateCandidateField("first_name", e.target.value)}
                   required
                 />
               </Field>
-              <Field label="Last name" htmlFor="Last_Name" required>
+              <Field label="Last name" htmlFor="last_name" required>
                 <Input
-                  id="Last_Name"
-                  value={candidateForm.Last_Name}
-                  onChange={(e) => updateCandidateField("Last_Name", e.target.value)}
+                  id="last_name"
+                  value={candidateForm.last_name}
+                  onChange={(e) => updateCandidateField("last_name", e.target.value)}
                   required
                 />
               </Field>
 
-              <Field label="Age" htmlFor="Age">
+              <Field label="Age" htmlFor="age">
                 <Input
-                  id="Age"
+                  id="age"
                   type="number"
                   min={0}
-                  value={candidateForm.Age}
-                  onChange={(e) => updateCandidateField("Age", e.target.value)}
+                  value={candidateForm.age}
+                  onChange={(e) => updateCandidateField("age", e.target.value)}
                 />
               </Field>
-              <Field label="Email" htmlFor="email">
+              <Field label="Email" htmlFor="email" required>
                 <Input
                   id="email"
                   type="email"
                   value={candidateForm.email}
                   onChange={(e) => updateCandidateField("email", e.target.value)}
+                  required
                 />
               </Field>
 
-              <Field label="Phone number" htmlFor="Phone_Number">
+              <Field label="Phone number" htmlFor="phone_number">
                 <Input
-                  id="Phone_Number"
-                  value={candidateForm.Phone_Number}
-                  onChange={(e) => updateCandidateField("Phone_Number", e.target.value)}
+                  id="phone_number"
+                  value={candidateForm.phone_number}
+                  onChange={(e) => updateCandidateField("phone_number", e.target.value)}
                 />
               </Field>
-              <Field label="City" htmlFor="City">
+              <Field label="City" htmlFor="city">
                 <Input
-                  id="City"
-                  value={candidateForm.City}
-                  onChange={(e) => updateCandidateField("City", e.target.value)}
-                />
-              </Field>
-
-              <Field label="Applied position" htmlFor="Applied_Position">
-                <Input
-                  id="Applied_Position"
-                  value={candidateForm.Applied_Position}
-                  onChange={(e) => updateCandidateField("Applied_Position", e.target.value)}
-                />
-              </Field>
-              <Field label="Notice period" htmlFor="Notice_Period">
-                <Input
-                  id="Notice_Period"
-                  value={candidateForm.Notice_Period}
-                  onChange={(e) => updateCandidateField("Notice_Period", e.target.value)}
+                  id="city"
+                  value={candidateForm.city}
+                  onChange={(e) => updateCandidateField("city", e.target.value)}
                 />
               </Field>
 
-              <Field label="Experience" htmlFor="Experience">
+              <Field label="Applied position" htmlFor="applied_position">
                 <Input
-                  id="Experience"
-                  value={candidateForm.Experience}
-                  onChange={(e) => updateCandidateField("Experience", e.target.value)}
+                  id="applied_position"
+                  value={candidateForm.applied_position}
+                  onChange={(e) => updateCandidateField("applied_position", e.target.value)}
                 />
               </Field>
-              <Field label="Education" htmlFor="Education">
+              <Field label="Notice period" htmlFor="notice_period">
                 <Input
-                  id="Education"
-                  value={candidateForm.Education}
-                  onChange={(e) => updateCandidateField("Education", e.target.value)}
+                  id="notice_period"
+                  value={candidateForm.notice_period}
+                  onChange={(e) => updateCandidateField("notice_period", e.target.value)}
                 />
               </Field>
 
-              <Field label="School" htmlFor="School">
+              <Field label="Experience" htmlFor="experience">
                 <Input
-                  id="School"
-                  value={candidateForm.School}
-                  onChange={(e) => updateCandidateField("School", e.target.value)}
+                  id="experience"
+                  value={candidateForm.experience}
+                  onChange={(e) => updateCandidateField("experience", e.target.value)}
                 />
               </Field>
-              <Field label="Starting stage" htmlFor="Status">
+              <Field label="Education" htmlFor="education">
+                <Input
+                  id="education"
+                  value={candidateForm.education}
+                  onChange={(e) => updateCandidateField("education", e.target.value)}
+                />
+              </Field>
+
+              <Field label="School" htmlFor="school">
+                <Input
+                  id="school"
+                  value={candidateForm.school}
+                  onChange={(e) => updateCandidateField("school", e.target.value)}
+                />
+              </Field>
+              <Field label="Starting stage" htmlFor="status">
                 <select
-                  id="Status"
-                  value={candidateForm.Status}
-                  onChange={(e) => updateCandidateField("Status", e.target.value)}
+                  id="status"
+                  value={candidateForm.status}
+                  onChange={(e) => updateCandidateField("status", e.target.value)}
                   className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   {orderedStages.map((s) => (
@@ -1261,42 +1306,42 @@ async function handleSendInterviewEmail() {
               </Field>
             </div>
 
-            <Field label="Skills" htmlFor="Skills" hint="Comma-separated">
+            <Field label="Skills" htmlFor="skills" hint="Comma-separated">
               <Input
-                id="Skills"
-                value={candidateForm.Skills}
-                onChange={(e) => updateCandidateField("Skills", e.target.value)}
+                id="skills"
+                value={candidateForm.skills}
+                onChange={(e) => updateCandidateField("skills", e.target.value)}
                 placeholder="React, Figma, SQL"
               />
             </Field>
 
-            <Field label="Resume notes" htmlFor="Resume_Input">
-              <Textarea
-                id="Resume_Input"
-                rows={4}
-                value={candidateForm.Resume_Input}
-                onChange={(e) => updateCandidateField("Resume_Input", e.target.value)}
+            <Field label="Resume link" htmlFor="resume_path" hint="URL or storage path">
+              <Input
+                id="resume_path"
+                value={candidateForm.resume_path}
+                onChange={(e) => updateCandidateField("resume_path", e.target.value)}
+                placeholder="https://…/resume.pdf"
               />
             </Field>
 
             <div className="grid gap-3 sm:grid-cols-3">
               <CheckboxField
-                id="Is_18_Plus"
+                id="is_18_plus"
                 label="18 or older"
-                checked={candidateForm.Is_18_Plus}
-                onChange={(v) => updateCandidateField("Is_18_Plus", v)}
+                checked={candidateForm.is_18_plus}
+                onChange={(v) => updateCandidateField("is_18_plus", v)}
               />
               <CheckboxField
-                id="Legal_Right_To_Work"
+                id="legal_right_to_work"
                 label="Legal right to work"
-                checked={candidateForm.Legal_Right_To_Work}
-                onChange={(v) => updateCandidateField("Legal_Right_To_Work", v)}
+                checked={candidateForm.legal_right_to_work}
+                onChange={(v) => updateCandidateField("legal_right_to_work", v)}
               />
               <CheckboxField
-                id="Former_Current_Mattel_Employee"
+                id="former_current_mattel_employee"
                 label="Former/current employee"
-                checked={candidateForm.Former_Current_Mattel_Employee}
-                onChange={(v) => updateCandidateField("Former_Current_Mattel_Employee", v)}
+                checked={candidateForm.former_current_mattel_employee}
+                onChange={(v) => updateCandidateField("former_current_mattel_employee", v)}
               />
             </div>
 
@@ -1319,7 +1364,8 @@ async function handleSendInterviewEmail() {
       </Dialog>
 
       {/* Schedule interview dialog — shown when a candidate is dropped into
-          any stage whose name contains "interview". */}
+          any stage whose name contains "interview". Confirming writes both
+          a candidate_tracking row and an interview_schedule row. */}
       <Dialog
         open={!!interviewPrompt}
         onOpenChange={(open) => {
@@ -1329,13 +1375,13 @@ async function handleSendInterviewEmail() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-            <CalendarClock className="h-4 w-4 fill-white stroke-black" />
-            Schedule Interview
-          </DialogTitle>
+              <CalendarClock className="h-4 w-4 fill-white stroke-black" />
+              Schedule Interview
+            </DialogTitle>
             <DialogDescription>
               {interviewPrompt && (
                 <>
-                  {interviewPrompt.candidate.First_Name} {interviewPrompt.candidate.Last_Name} was
+                  {interviewPrompt.candidate.first_name} {interviewPrompt.candidate.last_name} was
                   moved to <span className="font-medium">{interviewPrompt.stageName}</span>. When is
                   it scheduled for?
                 </>
@@ -1371,46 +1417,46 @@ async function handleSendInterviewEmail() {
               />
             </Field>
 
-           <DialogFooter className="flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="gap-2"
-              onClick={handleAddToGoogleCalendar}
-              disabled={!interviewDateTime}
-            >
-              <CalendarPlus className="h-4 w-4" />
-              Add to Google Calendar
-            </Button>
+            <DialogFooter className="flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                onClick={handleAddToGoogleCalendar}
+                disabled={!interviewDateTime}
+              >
+                <CalendarPlus className="h-4 w-4" />
+                Add to Google Calendar
+              </Button>
 
-            <Button
-              type="button"
-              variant="outline"
-              className="gap-2"
-              onClick={handleSendInterviewEmail}
-              disabled={sendingEmail || !interviewPrompt?.candidate.email}
-            >
-              {sendingEmail ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-              Email candidate
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2"
+                onClick={handleSendInterviewEmail}
+                disabled={sendingEmail || !interviewPrompt?.candidate.email}
+              >
+                {sendingEmail ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Email candidate
+              </Button>
 
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleSkipInterviewTime}
-              disabled={schedulingInterview}
-            >
-              Skip for now
-            </Button>
-            <Button type="submit" className="gap-2" disabled={schedulingInterview}>
-              {schedulingInterview && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save time
-            </Button>
-          </DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleSkipInterviewTime}
+                disabled={schedulingInterview}
+              >
+                Skip for now
+              </Button>
+              <Button type="submit" className="gap-2" disabled={schedulingInterview}>
+                {schedulingInterview && <Loader2 className="h-4 w-4 animate-spin" />}
+                Save time
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -1486,7 +1532,7 @@ const CheckboxField: FC<{
 
 interface StageColumnProps {
   stage: Stage;
-  candidates: OperatorRecord[];
+  candidates: CandidateRecord[];
   viewMode: ViewMode;
   isSystem?: boolean;
   onDelete?: () => void;
@@ -1498,7 +1544,7 @@ interface StageColumnProps {
   searchValue: string;
   onSearchChange: (value: string) => void;
 
-  onOpenCandidate: (candidate: OperatorRecord) => void;
+  onOpenCandidate: (candidate: CandidateRecord) => void;
 
   filters: {
     position: string;
@@ -1539,18 +1585,18 @@ const StageColumn: FC<StageColumnProps> = ({
     return candidates.filter((c) => {
       const matchesSearch = matchesCandidateSearch(c, searchValue);
 
-      const matchesPosition = filters.position === "all" || c.Applied_Position === filters.position;
-      const matchesCity = filters.city === "all" || c.City === filters.city;
-      const matchesEducation = filters.education === "all" || c.Education === filters.education;
+      const matchesPosition = filters.position === "all" || c.applied_position === filters.position;
+      const matchesCity = filters.city === "all" || c.city === filters.city;
+      const matchesEducation = filters.education === "all" || c.education === filters.education;
       const matchesNotice =
-        filters.noticePeriod === "all" || c.Notice_Period === filters.noticePeriod;
+        filters.noticePeriod === "all" || c.notice_period === filters.noticePeriod;
       const matchesMattel =
         filters.mattel === "all" ||
         (filters.mattel === "yes"
-          ? !!c.Former_Current_Mattel_Employee
-          : !c.Former_Current_Mattel_Employee);
+          ? !!c.former_current_mattel_employee
+          : !c.former_current_mattel_employee);
 
-      const age = c.Age ?? null;
+      const age = c.age ?? null;
       const matchesAgeMin = minAge === null || (age !== null && age >= minAge);
       const matchesAgeMax = maxAge === null || (age !== null && age <= maxAge);
 
@@ -1681,14 +1727,14 @@ const StageColumn: FC<StageColumnProps> = ({
 };
 
 const CandidateCard: FC<{
-  candidate: OperatorRecord;
+  candidate: CandidateRecord;
   onOpen: () => void;
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
   selected: boolean;
   onToggleSelect: () => void;
 }> = ({ candidate, onOpen, dragHandleProps, selected, onToggleSelect }) => {
-  const skills = candidate.Skills
-    ? candidate.Skills.split(",").map((s) => s.trim()).filter(Boolean)
+  const skills = candidate.skills
+    ? candidate.skills.split(",").map((s) => s.trim()).filter(Boolean)
     : [];
 
   return (
@@ -1714,19 +1760,19 @@ const CandidateCard: FC<{
             className="h-4 w-4 shrink-0 rounded border-input accent-primary"
           />
           <p className="truncate font-medium leading-tight">
-            {candidate.First_Name} {candidate.Last_Name}
+            {candidate.first_name} {candidate.last_name}
           </p>
         </div>
         <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing">
           <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
         </div>
       </div>
-      <p className="text-sm text-muted-foreground">{candidate.Applied_Position}</p>
+      <p className="text-sm text-muted-foreground">{candidate.applied_position}</p>
 
       <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
-        {candidate.City && (
+        {candidate.city && (
           <span className="flex items-center gap-1">
-            <MapPin className="h-3 w-3" /> {candidate.City}
+            <MapPin className="h-3 w-3" /> {candidate.city}
           </span>
         )}
         {candidate.email && (
@@ -1734,9 +1780,9 @@ const CandidateCard: FC<{
             <Mail className="h-3 w-3" /> {candidate.email}
           </span>
         )}
-        {candidate.Phone_Number && (
+        {candidate.phone_number && (
           <span className="flex items-center gap-1">
-            <Phone className="h-3 w-3" /> {candidate.Phone_Number}
+            <Phone className="h-3 w-3" /> {candidate.phone_number}
           </span>
         )}
       </div>
@@ -1760,7 +1806,7 @@ const CandidateCard: FC<{
 };
 
 const CandidateListItem: FC<{
-  candidate: OperatorRecord;
+  candidate: CandidateRecord;
   onOpen: () => void;
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
   selected: boolean;
@@ -1790,15 +1836,15 @@ const CandidateListItem: FC<{
     </div>
     <div className="min-w-0 flex-1">
       <p className="truncate text-sm font-medium">
-        {candidate.First_Name} {candidate.Last_Name}
+        {candidate.first_name} {candidate.last_name}
       </p>
       <p className="truncate text-xs text-muted-foreground">
-        {candidate.Applied_Position} {candidate.City ? `· ${candidate.City}` : ""}
+        {candidate.applied_position} {candidate.city ? `· ${candidate.city}` : ""}
       </p>
     </div>
-    {candidate.Notice_Period && (
+    {candidate.notice_period && (
       <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
-        {candidate.Notice_Period}
+        {candidate.notice_period}
       </Badge>
     )}
   </div>

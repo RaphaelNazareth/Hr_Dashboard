@@ -2,69 +2,27 @@ import { Header } from '@/components/Header';
 import { PageWrapper } from '@/components/PageWrapper';
 import { useState, useEffect, useMemo, type FC } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-// import PocketBase from 'pocketbase';
 import { SlidersHorizontal, X } from 'lucide-react';
 import {
-  pb,
-  OPERATOR_COLLECTION,
+  fetchCandidates,
   DEFAULT_STAGE_NAMES,
   moveCandidates,
 } from '@/lib/candidateBoard';
-import type { OperatorRecord } from '@/lib/candidateBoard';
-
-// // ---------------------------------------------------------------------------
-// // PocketBase client
-// // ---------------------------------------------------------------------------
-
-// const pb = new PocketBase(
-//   import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
-// );
-// const OPERATOR_COLLECTION = 'Operator_dataset';
+import type { CandidateRecord, CandidateStatus } from '@/lib/candidateBoard';
 
 // ---------------------------------------------------------------------------
-// Types
+// Sorting
 // ---------------------------------------------------------------------------
-export type { OperatorRecord };
 
-// export interface OperatorRecord {
-//   // PocketBase System Fields
-//   id: string;
-//   created: string;
-//   updated: string;
-
-//   // Custom Fields from Operator_dataset
-//   Candidate_ID: string;
-//   First_Name: string;
-//   Last_Name: string;
-//   Age: number;
-//   email: string;
-//   Phone_Number: string;
-//   City: string;
-//   Applied_Position: string;
-//   Experience: string; // e.g., "1-3 years"
-//   Education: string;  // e.g., "High School", "Bachelor's"
-//   School: string;
-//   Skills: string;     // e.g., "Excel"
-//   Resume_Input: string;
-//   Notice_Period: string; // e.g., "Immediate", "1 Month"
-//   Status: string;     // e.g., "Applied", "psychotest"
-//   Is_18_Plus: boolean;
-//   Legal_Right_To_Work: boolean;
-//   Former_Current_Mattel_Employee: boolean;
-//   date: string;
-// }
-
-// Updated Sort Keys matching exact dataset column names
 export type SortKey =
-  | 'First_Name'
-  | 'Age'
-  | 'City'
-  | 'Applied_Position'
-  | 'Experience'
-  | 'Notice_Period'
-  | 'Status'
-  | 'date'
-  | 'created';
+  | 'first_name'
+  | 'age'
+  | 'city'
+  | 'applied_position'
+  | 'experience'
+  | 'notice_period'
+  | 'status'
+  | 'applied_at';
 
 export type SortDir = 'asc' | 'desc';
 export type TriState = 'all' | 'yes' | 'no';
@@ -75,13 +33,12 @@ const PER_PAGE = 10;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function toSkillsArray(skills: string[] | string | undefined): string[] {
+function toSkillsArray(skills: string | null | undefined): string[] {
   if (!skills) return [];
-  if (Array.isArray(skills)) return skills;
   return skills.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-function formatDate(iso: string) {
+function formatDate(iso: string | null | undefined) {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
@@ -93,12 +50,19 @@ function matchesTriState(value: boolean, filter: TriState) {
   return filter === 'yes' ? !!value : !value;
 }
 
+// Matches the `status` CHECK constraint on public.candidates.
 const STATUS_STYLES: Record<string, string> = {
   Applied: 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400',
-  Test: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
-  Interview: 'bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400',
+  'CV Screening': 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400',
+  'Phone Screening': 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-400',
+  Psychotest: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+  FGD: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+  'Interview HR': 'bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400',
+  'Interview User': 'bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400',
+  'Interview Manager': 'bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400',
+  MCU: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400',
+  Offering: 'bg-teal-100 text-teal-700 dark:bg-teal-500/10 dark:text-teal-400',
   Hired: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
-  Cancelled: 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400',
   Rejected: 'bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400',
 };
 
@@ -125,12 +89,12 @@ function FlagDot({ ok }: { ok: boolean }) {
 // ---------------------------------------------------------------------------
 
 export const Candidates: FC = () => {
-  const [records, setRecords] = useState<OperatorRecord[]>([]);
+  const [records, setRecords] = useState<CandidateRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Query params — populated when arriving here via a Dashboard chart click
-  // (e.g. /candidates?status=Interview, /candidates?position=Warehouse%20Ops,
+  // (e.g. /candidates?status=Interview%20HR, /candidates?position=Warehouse%20Ops,
   // /candidates?city=Jakarta). Read once on mount to seed initial filter state.
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -146,12 +110,12 @@ export const Candidates: FC = () => {
   const [noticePeriodFilter, setNoticePeriodFilter] = useState<string>('all');
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkStageTarget, setBulkStageTarget] = useState<string>(DEFAULT_STAGE_NAMES[0]);
+  const [bulkStageTarget, setBulkStageTarget] = useState<CandidateStatus>(DEFAULT_STAGE_NAMES[0]);
   const [bulkMoving, setBulkMoving] = useState(false);
 
   const [showFilters, setShowFilters] = useState(false);
 
-  const [sortKey, setSortKey] = useState<SortKey>('date');
+  const [sortKey, setSortKey] = useState<SortKey>('applied_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [page, setPage] = useState(1);
 
@@ -197,8 +161,7 @@ export const Candidates: FC = () => {
     setLoading(true);
     setError(null);
 
-    pb.collection(OPERATOR_COLLECTION)
-      .getFullList<OperatorRecord>({ sort: '-date' })
+    fetchCandidates()
       .then((result) => {
         if (!cancelled) setRecords(result);
       })
@@ -215,23 +178,23 @@ export const Candidates: FC = () => {
   }, []);
 
   const statusOptions = useMemo(
-    () => Array.from(new Set(records.map((r) => r.Status).filter(Boolean))).sort(),
+    () => Array.from(new Set(records.map((r) => r.status).filter(Boolean))).sort(),
     [records]
   );
   const positionOptions = useMemo(
-    () => Array.from(new Set(records.map((r) => r.Applied_Position).filter(Boolean))).sort(),
+    () => Array.from(new Set(records.map((r) => r.applied_position).filter(Boolean))).sort() as string[],
     [records]
   );
   const cityOptions = useMemo(
-    () => Array.from(new Set(records.map((r) => r.City).filter(Boolean))).sort(),
+    () => Array.from(new Set(records.map((r) => r.city).filter(Boolean))).sort() as string[],
     [records]
   );
   const educationOptions = useMemo(
-    () => Array.from(new Set(records.map((r) => r.Education).filter(Boolean))).sort(),
+    () => Array.from(new Set(records.map((r) => r.education).filter(Boolean))).sort() as string[],
     [records]
   );
   const noticePeriodOptions = useMemo(
-    () => Array.from(new Set(records.map((r) => r.Notice_Period).filter(Boolean))).sort(),
+    () => Array.from(new Set(records.map((r) => r.notice_period).filter(Boolean))).sort() as string[],
     [records]
   );
 
@@ -241,26 +204,26 @@ export const Candidates: FC = () => {
     const maxAge = ageMax.trim() ? Number(ageMax) : null;
 
     let rows = records.filter((r) => {
-      const fullName = `${r.First_Name || ''} ${r.Last_Name || ''}`.trim();
+      const fullName = `${r.first_name || ''} ${r.last_name || ''}`.trim();
 
       const matchesSearch =
         !q ||
         fullName.toLowerCase().includes(q) ||
-        (r.City || '').toLowerCase().includes(q) ||
-        (r.Applied_Position || '').toLowerCase().includes(q) ||
-        toSkillsArray(r.Skills).some((s) => s.toLowerCase().includes(q));
+        (r.city || '').toLowerCase().includes(q) ||
+        (r.applied_position || '').toLowerCase().includes(q) ||
+        toSkillsArray(r.skills).some((s) => s.toLowerCase().includes(q));
 
-      const matchesStatus = statusFilter === 'all' || r.Status === statusFilter;
-      const matchesPosition = positionFilter === 'all' || r.Applied_Position === positionFilter;
-      const matchesCity = cityFilter === 'all' || r.City === cityFilter;
-      const matchesEducation = educationFilter === 'all' || r.Education === educationFilter;
-      const matchesNoticePeriod = noticePeriodFilter === 'all' || r.Notice_Period === noticePeriodFilter;
+      const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
+      const matchesPosition = positionFilter === 'all' || r.applied_position === positionFilter;
+      const matchesCity = cityFilter === 'all' || r.city === cityFilter;
+      const matchesEducation = educationFilter === 'all' || r.education === educationFilter;
+      const matchesNoticePeriod = noticePeriodFilter === 'all' || r.notice_period === noticePeriodFilter;
 
-      const age = r.Age ?? null;
+      const age = r.age ?? null;
       const matchesAgeMin = minAge === null || (age !== null && age >= minAge);
       const matchesAgeMax = maxAge === null || (age !== null && age <= maxAge);
 
-      const matchesMattel = matchesTriState(!!r.Former_Current_Mattel_Employee, mattelFilter);
+      const matchesMattel = matchesTriState(!!r.former_current_mattel_employee, mattelFilter);
 
       return (
         matchesSearch &&
@@ -280,13 +243,17 @@ export const Candidates: FC = () => {
       let bv: string | number = '';
 
       switch (sortKey) {
-        case 'Age':
-          av = a.Age ?? 0;
-          bv = b.Age ?? 0;
+        case 'age':
+          av = a.age ?? 0;
+          bv = b.age ?? 0;
           break;
-        case 'date':
-          av = a.date ? new Date(a.date).getTime() : 0;
-          bv = b.date ? new Date(b.date).getTime() : 0;
+        case 'applied_at':
+          av = a.applied_at ? new Date(a.applied_at).getTime() : 0;
+          bv = b.applied_at ? new Date(b.applied_at).getTime() : 0;
+          break;
+        case 'first_name':
+          av = `${a.first_name || ''} ${a.last_name || ''}`.trim();
+          bv = `${b.first_name || ''} ${b.last_name || ''}`.trim();
           break;
         default:
           av = (a[sortKey] as string) || '';
@@ -540,7 +507,7 @@ export const Candidates: FC = () => {
 
             <select
               value={bulkStageTarget}
-              onChange={(e) => setBulkStageTarget(e.target.value)}
+              onChange={(e) => setBulkStageTarget(e.target.value as CandidateStatus)}
               className="ml-auto rounded-md border bg-background px-2.5 py-1.5 text-sm"
             >
               {DEFAULT_STAGE_NAMES.map((name) => (
@@ -685,9 +652,9 @@ export const Candidates: FC = () => {
                   <th className="w-8 px-3 py-2">
                     <span className="sr-only">Select</span>
                   </th>
-                  <SortHeader label="Name" sortKeyName="First_Name" />
-                  <SortHeader label="Age" sortKeyName="Age" />
-                  <SortHeader label="City" sortKeyName="City" />
+                  <SortHeader label="Name" sortKeyName="first_name" />
+                  <SortHeader label="Age" sortKeyName="age" />
+                  <SortHeader label="City" sortKeyName="city" />
                   <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium text-muted-foreground">
                     Education
                   </th>
@@ -697,10 +664,10 @@ export const Candidates: FC = () => {
                   <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium text-muted-foreground">
                     Skills
                   </th>
-                  <SortHeader label="Applied Position" sortKeyName="Applied_Position" />
-                  <SortHeader label="Experience" sortKeyName="Experience" />
-                  <SortHeader label="Notice Period" sortKeyName="Notice_Period" />
-                  <SortHeader label="Status" sortKeyName="Status" />
+                  <SortHeader label="Applied Position" sortKeyName="applied_position" />
+                  <SortHeader label="Experience" sortKeyName="experience" />
+                  <SortHeader label="Notice Period" sortKeyName="notice_period" />
+                  <SortHeader label="Status" sortKeyName="status" />
                   <th className="whitespace-nowrap px-3 py-2 text-center text-xs font-medium text-muted-foreground">
                     18+
                   </th>
@@ -710,7 +677,7 @@ export const Candidates: FC = () => {
                   <th className="whitespace-nowrap px-3 py-2 text-center text-xs font-medium text-muted-foreground">
                     Ex/Current Mattel
                   </th>
-                  <SortHeader label="Applied On" sortKeyName="date" />
+                  <SortHeader label="Applied On" sortKeyName="applied_at" />
                 </tr>
               </thead>
 
@@ -750,15 +717,14 @@ export const Candidates: FC = () => {
                           className="h-4 w-4 rounded border-input accent-primary"
                         />
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 font-medium">{`${r.First_Name || ''} ${r.Last_Name || ''}`.trim() || r.id}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-medium">{`${r.First_Name || ''} ${r.Last_Name || ''}`.trim() || r.id}</td>
-                      <td className="whitespace-nowrap px-3 py-2 tabular-nums">{r.Age ?? '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-2">{r.City || '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-2">{r.Education || '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-2">{r.School || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 font-medium">{`${r.first_name || ''} ${r.last_name || ''}`.trim() || r.id}</td>
+                      <td className="whitespace-nowrap px-3 py-2 tabular-nums">{r.age ?? '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{r.city || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{r.education || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{r.school || '—'}</td>
                       <td className="max-w-[220px] px-3 py-2">
                         <div className="flex flex-wrap gap-1">
-                          {toSkillsArray(r.Skills)
+                          {toSkillsArray(r.skills)
                             .slice(0, 3)
                             .map((s) => (
                               <span
@@ -768,29 +734,29 @@ export const Candidates: FC = () => {
                                 {s}
                               </span>
                             ))}
-                          {toSkillsArray(r.Skills).length > 3 && (
+                          {toSkillsArray(r.skills).length > 3 && (
                             <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                              +{toSkillsArray(r.Skills).length - 3}
+                              +{toSkillsArray(r.skills).length - 3}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2">{r.Applied_Position || '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-2">{r.Experience ?? '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-2">{r.Notice_Period || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{r.applied_position || '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{r.experience ?? '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{r.notice_period || '—'}</td>
                       <td className="whitespace-nowrap px-3 py-2">
-                        <StatusBadge status={r.Status} />
+                        <StatusBadge status={r.status} />
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <FlagDot ok={!!r.Is_18_Plus} />
+                        <FlagDot ok={!!r.is_18_plus} />
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <FlagDot ok={!!r.Legal_Right_To_Work} />
+                        <FlagDot ok={!!r.legal_right_to_work} />
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <FlagDot ok={!!r.Former_Current_Mattel_Employee} />
+                        <FlagDot ok={!!r.former_current_mattel_employee} />
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(r.date)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(r.applied_at)}</td>
                     </tr>
                   ))
                 )}

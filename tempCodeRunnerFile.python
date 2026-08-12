@@ -1,0 +1,482 @@
+"""
+seed_candidates.py
+
+One file that does everything:
+  - Supabase client (hardcode your URL/key below)
+  - insert_* helpers for every table in schema.sql
+  - a randomized Indonesian candidate generator (names, addresses, education,
+    employment history, family, etc.)
+  - a runner that generates N candidates with applied_at spread realistically
+    over the past X days and inserts them
+
+Install:
+  pip install supabase faker --break-system-packages
+
+Usage:
+  python seed_candidates.py --count 350 --days-back 60
+  python seed_candidates.py --count 20 --seed 42       # reproducible batch
+  python seed_candidates.py --count 1 --days-back 0    # quick single test
+"""
+
+from __future__ import annotations
+
+import argparse
+import random
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from faker import Faker
+from supabase import create_client, Client
+
+# ---------------------------------------------------------------------------
+# Hardcoded project credentials — fill these in.
+# Dashboard -> Project Settings -> API -> Project URL / anon public key.
+#   - anon/public key  -> fine, RLS in schema.sql allows public INSERT.
+#   - service_role key -> also works but bypasses RLS — backend-only, never
+#                          ship it in client-side/browser code.
+# ---------------------------------------------------------------------------
+SUPABASE_URL = "https://ulciiqwhfviilhgwbbmc.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVsY2lpcXdoZnZpaWxoZ3diYm1jIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjM4NjE2NywiZXhwIjoyMTAxOTYyMTY3fQ.1wmQK9CuosVYh8BXj0239Ii6jsLvQQPEidZf6s5-lyU"
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+fake = Faker("id_ID")
+
+
+# ---------------------------------------------------------------------------
+# Insert helpers — one per table in schema.sql
+# ---------------------------------------------------------------------------
+
+def insert_candidate(data: dict[str, Any]) -> str:
+    payload = {
+        "candidate_code": data.get("candidate_code"),
+        "first_name": data["first_name"],
+        "last_name": data["last_name"],
+        "age": data.get("age"),
+        "gender": data.get("gender"),
+        "place_of_birth": data.get("place_of_birth"),
+        "date_of_birth": data.get("date_of_birth"),
+        "email": data["email"],
+        "phone_number": data.get("phone_number"),
+        "mobile_phone_wa": data.get("mobile_phone_wa"),
+        "identity_card_number": data.get("identity_card_number"),
+        "family_card_number": data.get("family_card_number"),
+        "religion": data.get("religion"),
+        "marital_status": data.get("marital_status"),
+        "city": data.get("city"),
+        "applied_position": data.get("applied_position"),
+        "job_id": data.get("job_id"),
+        "experience": data.get("experience"),
+        "education": data.get("education"),
+        "school": data.get("school"),
+        "skills": data.get("skills"),
+        "certificates": data.get("certificates"),
+        "languages": data.get("languages"),
+        "notice_period": data.get("notice_period"),
+        "is_18_plus": data.get("is_18_plus", False),
+        "legal_right_to_work": data.get("legal_right_to_work", False),
+        "former_current_mattel_employee": data.get("former_current_mattel_employee", False),
+        "consent_data_collection": data.get("consent_data_collection", False),
+        "consent_data_usage": data.get("consent_data_usage", False),
+        "consent_data_retention": data.get("consent_data_retention", False),
+        "resume_path": data.get("resume_path"),
+        "ktp_path": data.get("ktp_path"),
+    }
+    # Only set applied_at if provided — omit the key entirely otherwise so
+    # the column's `default now()` applies (an explicit None would insert
+    # NULL and violate the not-null constraint instead).
+    if data.get("applied_at"):
+        payload["applied_at"] = data["applied_at"]
+    res = supabase.table("candidates").insert(payload).execute()
+    return res.data[0]["id"]
+
+
+def insert_address(candidate_id: str, data: dict[str, Any]) -> None:
+    payload = {
+        "candidate_id": candidate_id,
+        "ktp_address": data.get("ktp_address"),
+        "rt": data.get("rt"),
+        "rw": data.get("rw"),
+        "kelurahan": data.get("kelurahan"),
+        "kecamatan": data.get("kecamatan"),
+        "kota_kabupaten": data.get("kota_kabupaten"),
+        "provinsi": data.get("provinsi"),
+        "zip_code": data.get("zip_code"),
+        "present_address_same_as_ktp": data.get("present_address_same_as_ktp", True),
+        "present_address": data.get("present_address"),
+        "present_address_city": data.get("present_address_city"),
+        "present_address_province": data.get("present_address_province"),
+        "present_address_zip_code": data.get("present_address_zip_code"),
+    }
+    supabase.table("candidate_address").insert(payload).execute()
+
+
+def insert_emergency_contact(candidate_id: str, data: dict[str, Any]) -> None:
+    payload = {
+        "candidate_id": candidate_id,
+        "name": data.get("emergency_contact_name"),
+        "relationship": data.get("emergency_contact_relationship"),
+        "phone": data.get("emergency_contact_phone"),
+        "address_same_as_me": data.get("emergency_contact_address_same_as_me", True),
+        "address": data.get("emergency_contact_address"),
+        "city": data.get("emergency_contact_city"),
+        "province": data.get("emergency_contact_province"),
+        "zip_code": data.get("emergency_contact_zip_code"),
+    }
+    supabase.table("candidate_emergency_contact").insert(payload).execute()
+
+
+def insert_education(candidate_id: str, education_entries: list[dict[str, Any]]) -> None:
+    """education_entries: one dict per ticked level, e.g.
+    [{"level": "S1", "institution_name": "...", "location": "...",
+      "major": "...", "graduation_year": "2020"}]"""
+    if not education_entries:
+        return
+    rows = [{**entry, "candidate_id": candidate_id} for entry in education_entries]
+    supabase.table("candidate_education").insert(rows).execute()
+
+
+def insert_employment_history(candidate_id: str, jobs: list[dict[str, Any]]) -> None:
+    """jobs: one dict per past job — see generate_employment_history() below
+    for the exact shape."""
+    if not jobs:
+        return
+    rows = [{**job, "candidate_id": candidate_id} for job in jobs]
+    supabase.table("candidate_employment_history").insert(rows).execute()
+
+
+def insert_family(candidate_id: str, data: dict[str, Any]) -> None:
+    payload = {
+        "candidate_id": candidate_id,
+        "spouse_name": data.get("spouse_name"),
+        "spouse_date_of_birth": data.get("spouse_date_of_birth"),
+        "spouse_gender": data.get("spouse_gender"),
+        "spouse_education": data.get("spouse_education"),
+        "number_of_child": data.get("number_of_child", 0),
+    }
+    supabase.table("candidate_family").insert(payload).execute()
+
+
+def insert_children(candidate_id: str, children: list[dict[str, Any]]) -> None:
+    """children: one dict per child, e.g.
+    [{"child_name": "...", "child_gender": "Laki-laki (Male)",
+      "child_date_of_birth": "2015-03-01", "child_education": "SD"}]"""
+    if not children:
+        return
+    rows = [{**child, "candidate_id": candidate_id} for child in children]
+    supabase.table("candidate_children").insert(rows).execute()
+
+
+def insert_application_history(candidate_id: str, data: dict[str, Any]) -> None:
+    payload = {
+        "candidate_id": candidate_id,
+        "previously_applied": data.get("previously_applied"),
+        "previous_application_date": data.get("previous_application_date"),
+        "previous_position_applied": data.get("previous_position_applied"),
+        "objection_to_reference_check": data.get("objection_to_reference_check"),
+        "acquaintance_at_mattel": data.get("acquaintance_at_mattel"),
+        "acquaintance_name": data.get("acquaintance_name"),
+        "acquaintance_relationship": data.get("acquaintance_relationship"),
+    }
+    supabase.table("candidate_application_history").insert(payload).execute()
+
+
+def insert_offer_details(candidate_id: str, data: dict[str, Any]) -> None:
+    payload = {
+        "candidate_id": candidate_id,
+        "expected_gross_monthly_salary": data.get("expected_gross_monthly_salary"),
+        "available_start_date": data.get("available_start_date"),
+        "uniform_size": data.get("uniform_size"),
+    }
+    supabase.table("candidate_offer_details").insert(payload).execute()
+
+
+def submit_application(data: dict[str, Any]) -> str:
+    """
+    data shape:
+      {
+        ...flat candidate/address/emergency/family/application/offer fields...
+        "education_entries": [ {...}, {...} ],    # list, see insert_education
+        "employment_history": [ {...}, {...} ],   # list, see insert_employment_history
+        "children": [ {...}, {...} ],              # list, see insert_children
+      }
+    Returns the new candidate's id (uuid string).
+    """
+    candidate_id = insert_candidate(data)
+    insert_address(candidate_id, data)
+    insert_emergency_contact(candidate_id, data)
+    insert_education(candidate_id, data.get("education_entries", []))
+    insert_employment_history(candidate_id, data.get("employment_history", []))
+
+    if data.get("marital_status") == "Married / Menikah":
+        insert_family(candidate_id, data)
+        insert_children(candidate_id, data.get("children", []))
+
+    insert_application_history(candidate_id, data)
+    insert_offer_details(candidate_id, data)
+
+    return candidate_id
+
+
+# ---------------------------------------------------------------------------
+# Option pools — kept in sync with ApplyPage.tsx
+# ---------------------------------------------------------------------------
+
+GENDERS = ["Laki-laki (Male)", "Perempuan (Female)"]
+RELIGIONS = ["Islam", "Kristen Protestan", "Katolik", "Hindu", "Buddha", "Khonghucu", "Other / Lainnya"]
+MARITAL_STATUSES = ["Single / Belum Menikah", "Married / Menikah", "Widowed / Janda / Duda"]
+EDUCATION_LEVELS = ["SMA/SMK", "D3", "S1", "S2", "S3"]
+UNIFORM_SIZES = ["S", "M", "L", "XL", "XXL", "XXXL", "XXXXL"]
+YES_NO = ["Yes", "No"]
+SKILL_POOL = [
+    "Sewing", "Microsoft Office (Word, Excel, PowerPoint)", "Programming", "Web Developer",
+    "Hardware Komputer", "PLC", "SolidWork", "CNC", "Corel Draw", "Design Grafis",
+    "Printing", "Macro Excel", "Power BI",
+]
+CERTIFICATE_POOL = ["STR", "Komputer", "Forklift"]
+LANGUAGE_POOL = ["Bahasa Indonesia", "English", "Mandarin", "Japanese", "Korean"]
+LANGUAGE_PROFICIENCY = ["Basic", "Intermediate", "Advanced", "Native / Fluent"]
+APPLIED_POSITIONS = [
+    "Machine Operator", "Quality Control", "Warehouse Staff", "Assembly Line Operator",
+    "Packaging Operator", "Administrative Staff", "Maintenance Technician",
+]
+CITIES = [
+    "Kota Tangerang", "Kabupaten Tangerang", "Kota Tangerang Selatan", "Jakarta Barat",
+    "Jakarta Timur", "Jakarta Selatan", "Kota Bekasi", "Kabupaten Bekasi", "Kota Bogor",
+    "Kabupaten Bogor", "Kota Serang", "Kota Cilegon", "Depok",
+]
+PROVINCES = ["Banten", "DKI Jakarta", "Jawa Barat"]
+RELATIONSHIP_OPTIONS = [
+    "Parents / Orang Tua", "Sibling / Saudara Kandung", "Aunt or Uncle / Paman atau Bibi",
+    "Cousin / Saudara Sepupu", "Friend / Teman", "Other relative / Kerabat lainnya",
+]
+
+
+# ---------------------------------------------------------------------------
+# Random sub-generators
+# ---------------------------------------------------------------------------
+
+def random_applied_at(days_back: int) -> datetime:
+    """Spread applications realistically: skewed toward more recent days,
+    time-of-day weighted toward waking hours (06:00-23:00)."""
+    day_offset = int(random.triangular(0, days_back, 0))
+    hour = int(random.triangular(6, 23, 13))
+    minute = random.randint(0, 59)
+    dt = datetime.now(timezone.utc) - timedelta(days=day_offset)
+    return dt.replace(hour=min(hour, 23), minute=minute, second=random.randint(0, 59), microsecond=0)
+
+
+def random_education_entries() -> list[dict]:
+    levels = ["SMA/SMK"]
+    for lvl in ["D3", "S1", "S2"]:
+        if random.random() < 0.25:
+            levels.append(lvl)
+            break  # at most one tier above high school
+    entries = []
+    grad_year = random.randint(2015, 2023)
+    for lvl in levels:
+        entries.append({
+            "level": lvl,
+            "institution_name": fake.company() + (" University" if lvl != "SMA/SMK" else " Vocational School"),
+            "location": fake.city(),
+            "major": random.choice(["Manajemen", "Teknik Mesin", "Akuntansi", "IPA", "IPS", "Teknik Elektro"]),
+            "graduation_year": str(grad_year),
+        })
+        grad_year += random.randint(2, 4)
+    return entries
+
+
+def random_employment_history() -> list[dict]:
+    if random.random() < 0.3:
+        return []  # fresh graduate
+    entries = []
+    for _ in range(random.choice([1, 1, 1, 2])):
+        start = fake.date_between(start_date="-6y", end_date="-1y")
+        still_working = random.random() < 0.2
+        finish = None if still_working else fake.date_between(start_date=start, end_date="today")
+        entries.append({
+            "company_name": fake.company(),
+            "last_position": random.choice(["Operator Produksi", "Staff Admin", "Quality Control", "Staff Gudang"]),
+            "business_type": random.choice(["Manufaktur", "Retail", "Logistik", "Elektronik"]),
+            "job_description": fake.sentence(nb_words=10),
+            "start_date": start.isoformat(),
+            "still_working": still_working,
+            "finish_date": finish.isoformat() if finish else None,
+            "reason_for_leaving": None if still_working else random.choice(
+                ["Kontrak selesai", "Mencari peluang baru", "Relokasi", "PHK"]
+            ),
+            "recent_gross_monthly_salary": random.randint(35, 55) * 100000,
+            "employer_supervisor_name": fake.name(),
+            "employer_supervisor_position": "Supervisor",
+            "employer_supervisor_phone": fake.phone_number(),
+            "period_known_of_employer": f"{random.randint(1, 3)} tahun",
+        })
+    return entries
+
+
+def random_children(count: int) -> list[dict]:
+    return [
+        {
+            "child_name": fake.first_name(),
+            "child_gender": random.choice(GENDERS),
+            "child_date_of_birth": fake.date_of_birth(minimum_age=0, maximum_age=17).isoformat(),
+            "child_education": random.choice(["Belum Sekolah", "SD", "SMP", "SMA/SMK"]),
+        }
+        for _ in range(count)
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Full candidate generator
+# ---------------------------------------------------------------------------
+
+def generate_candidate(index: int, days_back: int) -> dict:
+    gender = random.choice(GENDERS)
+    first_name = fake.first_name_male() if gender == GENDERS[0] else fake.first_name_female()
+    last_name = fake.last_name()
+    marital_status = random.choices(MARITAL_STATUSES, weights=[55, 40, 5])[0]
+    is_married = marital_status == "Married / Menikah"
+    present_same_as_ktp = random.random() < 0.7
+    skills = random.sample(SKILL_POOL, k=random.randint(1, 4))
+    certificates = random.sample(CERTIFICATE_POOL, k=random.randint(0, 2))
+    languages = ", ".join(
+        f"{lang} ({random.choice(LANGUAGE_PROFICIENCY)})"
+        for lang in random.sample(LANGUAGE_POOL, k=random.randint(1, 2))
+    )
+    applied_at = random_applied_at(days_back)
+    previously_applied = random.choices(YES_NO, weights=[15, 85])[0]
+    acquaintance_at_mattel = random.choices(YES_NO, weights=[20, 80])[0]
+
+    data: dict = {
+        "candidate_code": f"CAND-{applied_at.strftime('%Y%m%d%H%M')}-{index:04d}",
+        "first_name": first_name,
+        "last_name": last_name,
+        "age": random.randint(19, 45),
+        "gender": gender,
+        "place_of_birth": fake.city(),
+        "date_of_birth": fake.date_of_birth(minimum_age=19, maximum_age=45).isoformat(),
+        "email": f"{first_name}.{last_name}{random.randint(1, 999)}@example.com".lower(),
+        "phone_number": fake.phone_number(),
+        "mobile_phone_wa": fake.phone_number(),
+        "identity_card_number": "".join(random.choices("0123456789", k=16)),
+        "family_card_number": "".join(random.choices("0123456789", k=16)),
+        "religion": random.choice(RELIGIONS),
+        "marital_status": marital_status,
+        "city": random.choice(CITIES),
+        "applied_position": random.choice(APPLIED_POSITIONS),
+        "job_id": None,
+        "experience": f"{random.randint(0, 8)} tahun",
+        "education": random.choice(EDUCATION_LEVELS),  # legacy flat summary field
+        "school": fake.company() + " School",
+        "skills": ", ".join(skills),
+        "certificates": ", ".join(certificates),
+        "languages": languages,
+        "notice_period": random.choice(["Immediate", "2 weeks", "1 month"]),
+        "is_18_plus": True,
+        "legal_right_to_work": True,
+        "former_current_mattel_employee": random.random() < 0.05,
+        "consent_data_collection": True,
+        "consent_data_usage": True,
+        "consent_data_retention": True,
+        "resume_path": None,
+        "ktp_path": None,
+        "applied_at": applied_at.isoformat(),
+
+        "ktp_address": fake.street_address(),
+        "rt": f"{random.randint(1, 20):03d}",
+        "rw": f"{random.randint(1, 20):03d}",
+        "kelurahan": fake.city_suffix(),
+        "kecamatan": fake.city(),
+        "kota_kabupaten": random.choice(CITIES),
+        "provinsi": random.choice(PROVINCES),
+        "zip_code": fake.postcode(),
+        "present_address_same_as_ktp": present_same_as_ktp,
+        "present_address": None if present_same_as_ktp else fake.address(),
+        "present_address_city": None if present_same_as_ktp else random.choice(CITIES),
+        "present_address_province": None if present_same_as_ktp else random.choice(PROVINCES),
+        "present_address_zip_code": None if present_same_as_ktp else fake.postcode(),
+
+        "emergency_contact_name": fake.name(),
+        "emergency_contact_relationship": random.choice(["Orang Tua", "Saudara", "Pasangan"]),
+        "emergency_contact_phone": fake.phone_number(),
+        "emergency_contact_address_same_as_me": True,
+        "emergency_contact_address": None,
+        "emergency_contact_city": None,
+        "emergency_contact_province": None,
+        "emergency_contact_zip_code": None,
+
+        "education_entries": random_education_entries(),
+        "employment_history": random_employment_history(),
+
+        "spouse_name": fake.name() if is_married else None,
+        "spouse_date_of_birth": fake.date_of_birth(minimum_age=20, maximum_age=50).isoformat() if is_married else None,
+        "spouse_gender": (GENDERS[1] if gender == GENDERS[0] else GENDERS[0]) if is_married else None,
+        "spouse_education": random.choice(EDUCATION_LEVELS) if is_married else None,
+        "number_of_child": 0,
+        "children": [],
+
+        "previously_applied": previously_applied,
+        "previous_application_date": None,
+        "previous_position_applied": None,
+        "objection_to_reference_check": random.choices(YES_NO, weights=[10, 90])[0],
+        "acquaintance_at_mattel": acquaintance_at_mattel,
+        "acquaintance_name": None,
+        "acquaintance_relationship": None,
+
+        "expected_gross_monthly_salary": random.randint(40, 70) * 100000,
+        "available_start_date": (applied_at + timedelta(days=random.randint(3, 30))).date().isoformat(),
+        "uniform_size": random.choice(UNIFORM_SIZES),
+    }
+
+    if is_married:
+        child_count = random.choices([0, 1, 2, 3], weights=[20, 40, 30, 10])[0]
+        data["number_of_child"] = child_count
+        data["children"] = random_children(child_count)
+
+    if previously_applied == "Yes":
+        data["previous_application_date"] = fake.date_between(start_date="-3y", end_date="-6m").isoformat()
+        data["previous_position_applied"] = random.choice(APPLIED_POSITIONS)
+
+    if acquaintance_at_mattel == "Yes":
+        data["acquaintance_name"] = fake.name()
+        data["acquaintance_relationship"] = random.choice(RELATIONSHIP_OPTIONS)
+
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Seed Supabase with randomized dummy applicants.")
+    parser.add_argument("--count", type=int, default=350, help="How many candidates to generate (default: 350)")
+    parser.add_argument("--days-back", type=int, default=60, help="Spread applied_at over this many past days")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed, for reproducible batches")
+    parser.add_argument("--delay", type=float, default=0.0, help="Seconds to sleep between candidates (rate limiting)")
+    args = parser.parse_args()
+
+    if args.seed is not None:
+        random.seed(args.seed)
+        Faker.seed(args.seed)
+
+    succeeded, failed = 0, 0
+    for i in range(1, args.count + 1):
+        data = generate_candidate(i, args.days_back)
+        try:
+            candidate_id = submit_application(data)
+            succeeded += 1
+            if i % 25 == 0 or i == args.count:
+                print(f"[{i}/{args.count}] inserted (latest: {candidate_id})")
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"[{i}/{args.count}] FAILED for {data['first_name']} {data['last_name']}: {exc}")
+
+        if args.delay:
+            time.sleep(args.delay)
+
+    print(f"\nDone. {succeeded} inserted, {failed} failed out of {args.count}.")
+
+
+if __name__ == "__main__":
+    main()

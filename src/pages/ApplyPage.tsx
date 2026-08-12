@@ -1,7 +1,5 @@
 import { type FC, type FormEvent, useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import PocketBase from "pocketbase";
-import type { RecordModel } from "pocketbase";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,24 +8,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CheckCircle2, Briefcase, AlertCircle } from "lucide-react";
 import { INDONESIAN_CITIES } from "@/pages/indonesiancities";
-
-const pb = new PocketBase(
-  import.meta.env.VITE_POCKETBASE_URL || "http://127.0.0.1:8090"
-);
-pb.autoCancellation(false);
-
-// Set this in .env — see note at the bottom of the form for what it enables.
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
-
-const JOBS_COLLECTION = "Jobs";
-const OPERATOR_COLLECTION = "Operator_dataset";
-
-interface Job extends RecordModel {
-  Job_Title: string;
-  Job_Description: string;
-  Requirements: string;
-  Status: "Open" | "Closed";
-}
+import { fetchJobById, submitApplication } from "@/lib/candidateBoard";
+import type {
+  JobRecord,
+  Gender,
+  MaritalStatus,
+  YesNo,
+  EducationLevel,
+  CandidateApplicationInput,
+  CandidateAddressInput,
+  CandidateEmergencyContactInput,
+  CandidateEducationInput,
+  CandidateEmploymentHistoryInput,
+  CandidateFamilyInput,
+  CandidateChildInput,
+  CandidateApplicationHistoryInput,
+  CandidateOfferDetailsInput,
+} from "@/lib/candidateBoard";
 
 // ---------------------------------------------------------------------------
 // Option lists
@@ -63,7 +60,7 @@ const MARITAL_STATUS_OPTIONS = [
   "Widowed / Janda / Duda",
 ];
 
-const EDUCATION_LEVEL_CHECKBOXES = ["SMA/SMK", "D3", "S1", "S2", "S3"];
+const EDUCATION_LEVEL_CHECKBOXES: EducationLevel[] = ["SMA/SMK", "D3", "S1", "S2", "S3"];
 
 const UNIFORM_SIZES = ["S", "M", "L", "XL", "XXL", "XXXL", "XXXXL"];
 
@@ -150,7 +147,7 @@ interface ApplicationForm {
   Provinsi: string;
   Zip_Code: string;
 
-  // Present address (Google Maps autocomplete) — only used when different from KTP address
+  // Present address (Nominatim/OpenStreetMap autocomplete) — only used when different from KTP address
   Present_Address_Same_As_KTP: boolean;
   Present_Address: string;
   Present_Address_City: string;
@@ -352,43 +349,201 @@ function emptyForm(): ApplicationForm {
 }
 
 // ---------------------------------------------------------------------------
-// Google Places Autocomplete loader
+// CariKodePos.ID address autocomplete
 // ---------------------------------------------------------------------------
+//
+// IMPORTANT: carikodepos.id does not send an Access-Control-Allow-Origin
+// header on /api/postal-codes, so the browser blocks calling it directly
+// (see the CORS error in devtools). We route through our own backend
+// instead — same pattern as the /api/extract-cv resume upload below — so
+// the browser only ever talks same-origin/local, and the backend does the
+// server-to-server fetch to carikodepos.id where CORS doesn't apply.
+//
+// Add this route to the local backend (adjust to your framework):
+//
+//   FastAPI example:
+//   @app.get("/api/postal-code-search")
+//   async def postal_code_search(search: str, limit: int = 6):
+//       async with httpx.AsyncClient() as client:
+//           r = await client.get(
+//               "https://carikodepos.id/api/postal-codes",
+//               params={"search": search, "limit": limit},
+//           )
+//           return r.json()
+//
+const POSTAL_SEARCH_ENDPOINT = "http://127.0.0.1:8000/api/postal-code-search";
 
-let mapsLoadPromise: Promise<void> | null = null;
-
-function loadGoogleMaps(): Promise<void> {
-  if (!GOOGLE_MAPS_API_KEY) return Promise.reject(new Error("No API key configured"));
-  if (mapsLoadPromise) return mapsLoadPromise;
-
-  mapsLoadPromise = new Promise((resolve, reject) => {
-    if ((window as any).google?.maps?.places) {
-      resolve();
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places`;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Google Maps"));
-    document.head.appendChild(script);
-  });
-
-  return mapsLoadPromise;
+interface CariKodePosArea {
+  name: string;
+  slug: string;
 }
 
-function componentFromPlace(
-  place: google.maps.places.PlaceResult,
-  types: string[]
-): string {
-  const comp = place.address_components?.find((c) => types.every((t) => c.types.includes(t)) || types.some((t) => c.types.includes(t)));
-  return comp?.long_name ?? "";
+interface CariKodePosEntry {
+  id: string;
+  code: string;
+  village: CariKodePosArea;
+  district: CariKodePosArea;
+  city: CariKodePosArea;
+  province: CariKodePosArea;
+}
+
+interface CariKodePosResponse {
+  success: boolean;
+  data?: {
+    postalCodes: CariKodePosEntry[];
+  };
+  error?: string;
+}
+
+function formatCariKodePosEntry(entry: CariKodePosEntry): string {
+  return `${entry.village.name}, ${entry.district.name}, ${entry.city.name}, ${entry.province.name} ${entry.code}`;
+}
+
+/** Case-insensitive match of an API city name against the fixed Kota_Kabupaten list. */
+function findMatchingCity(cityName: string): string | null {
+  const normalized = cityName.trim().toLowerCase();
+  return INDONESIAN_CITIES.find((c) => c.toLowerCase() === normalized) ?? null;
 }
 
 /**
- * Free-text address input that upgrades to Google Places Autocomplete once
- * VITE_GOOGLE_MAPS_API_KEY is set. Falls back to a plain text field (with a
- * hint) if the key isn't configured yet.
+ * Shared search logic for the postal-code lookup, used by every
+ * autocomplete field below. Hits the API on every keystroke (no debounce,
+ * as requested) and guards against stale/out-of-order responses.
+ */
+function usePostalSearch() {
+  const [suggestions, setSuggestions] = useState<CariKodePosEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const requestIdRef = useRef(0);
+
+  async function search(text: string) {
+    if (text.trim().length < 2) {
+      requestIdRef.current += 1; // invalidate any in-flight request
+      setSuggestions([]);
+      setLoading(false);
+      setError(false);
+      return;
+    }
+
+    const thisRequestId = ++requestIdRef.current;
+    setLoading(true);
+    setError(false);
+    try {
+      const params = new URLSearchParams({ search: text, limit: "6" });
+      const res = await fetch(`${POSTAL_SEARCH_ENDPOINT}?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) throw new Error(`Postal code search responded ${res.status}`);
+      const body: CariKodePosResponse = await res.json();
+
+      if (thisRequestId !== requestIdRef.current) return; // stale response
+
+      if (!body.success || !body.data) throw new Error(body.error ?? "Unknown API error");
+      setSuggestions(body.data.postalCodes);
+    } catch (err) {
+      console.error("Postal code lookup failed", err);
+      if (thisRequestId === requestIdRef.current) {
+        setSuggestions([]);
+        setError(true);
+      }
+    } finally {
+      if (thisRequestId === requestIdRef.current) setLoading(false);
+    }
+  }
+
+  function clear() {
+    requestIdRef.current += 1;
+    setSuggestions([]);
+    setLoading(false);
+    setError(false);
+  }
+
+  return { suggestions, loading, error, search, clear };
+}
+
+/**
+ * Generic postal-code-backed text field: shows a dropdown of matches as the
+ * user types and hands the picked entry back via onSelectEntry. Every
+ * address-related blank in the form (KTP Kelurahan/Kecamatan/Provinsi/Zip
+ * Code, plus the full Present/Emergency-contact address fields) is built on
+ * top of this same component.
+ */
+const PostalSuggestionField: FC<{
+  id: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  onSelectEntry: (entry: CariKodePosEntry) => void;
+  placeholder?: string;
+}> = ({ id, value, onChangeText, onSelectEntry, placeholder }) => {
+  const { suggestions, loading, error, search, clear } = usePostalSearch();
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function handleChange(text: string) {
+    onChangeText(text);
+    if (text.trim().length < 2) {
+      clear();
+      setOpen(false);
+      return;
+    }
+    void search(text);
+    setOpen(true);
+  }
+
+  function handleSelect(entry: CariKodePosEntry) {
+    onSelectEntry(entry);
+    clear();
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <Input
+        id={id}
+        value={value}
+        onChange={(e) => handleChange(e.target.value)}
+        onFocus={() => setOpen(suggestions.length > 0)}
+        placeholder={placeholder ?? "Start typing…"}
+        autoComplete="off"
+      />
+      {loading && <p className="mt-1 text-xs text-muted-foreground">Searching…</p>}
+      {!loading && error && (
+        <p className="mt-1 text-xs text-muted-foreground">Lookup unavailable — type manually.</p>
+      )}
+      {open && suggestions.length > 0 && (
+        <ul className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border bg-popover text-sm text-popover-foreground shadow-md">
+          {suggestions.map((entry) => (
+            <li key={entry.id}>
+              <button
+                type="button"
+                onClick={() => handleSelect(entry)}
+                className="block w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground"
+              >
+                {formatCariKodePosEntry(entry)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+/**
+ * Thin wrapper around PostalSuggestionField for the two full free-text
+ * address fields (Present Address, Emergency Contact Address) — keeps the
+ * existing onPlaceSelected({ city, province, zip, formatted }) contract so
+ * nothing downstream needed to change.
  */
 const AddressAutocompleteField: FC<{
   id: string;
@@ -396,61 +551,24 @@ const AddressAutocompleteField: FC<{
   onChangeText: (value: string) => void;
   onPlaceSelected: (parts: { city: string; province: string; zip: string; formatted: string }) => void;
   placeholder?: string;
-}> = ({ id, value, onChangeText, onPlaceSelected, placeholder }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [mapsReady, setMapsReady] = useState(false);
-
-  useEffect(() => {
-    if (!GOOGLE_MAPS_API_KEY) return;
-    let cancelled = false;
-    loadGoogleMaps()
-      .then(() => {
-        if (cancelled || !inputRef.current) return;
-        const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
-          componentRestrictions: { country: "id" },
-          fields: ["address_components", "formatted_address"],
-        });
-        autocomplete.addListener("place_changed", () => {
-          const place = autocomplete.getPlace();
-          if (!place.address_components) return;
-          const city =
-            componentFromPlace(place, ["administrative_area_level_2"]) ||
-            componentFromPlace(place, ["locality"]);
-          const province = componentFromPlace(place, ["administrative_area_level_1"]);
-          const zip = componentFromPlace(place, ["postal_code"]);
-          const formatted = place.formatted_address ?? inputRef.current?.value ?? "";
-          onChangeText(formatted);
-          onPlaceSelected({ city, province, zip, formatted });
-        });
-        setMapsReady(true);
-      })
-      .catch(() => setMapsReady(false));
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div>
-      <Input
-        id={id}
-        ref={inputRef}
-        value={value}
-        onChange={(e) => onChangeText(e.target.value)}
-        placeholder={placeholder ?? "Start typing an address…"}
-      />
-      {!GOOGLE_MAPS_API_KEY && (
-        <p className="mt-1 text-xs text-muted-foreground">
-          Address autocomplete not configured yet — type the full address manually.
-        </p>
-      )}
-      {GOOGLE_MAPS_API_KEY && !mapsReady && (
-        <p className="mt-1 text-xs text-muted-foreground">Loading address suggestions…</p>
-      )}
-    </div>
-  );
-};
+}> = ({ id, value, onChangeText, onPlaceSelected, placeholder }) => (
+  <div>
+    <PostalSuggestionField
+      id={id}
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder ?? "Start typing an address…"}
+      onSelectEntry={(entry) => {
+        const formatted = formatCariKodePosEntry(entry);
+        onChangeText(formatted);
+        onPlaceSelected({ city: entry.city.name, province: entry.province.name, zip: entry.code, formatted });
+      }}
+    />
+    <p className="mt-1 text-xs text-muted-foreground">
+      Powered by CariKodePos.ID — start typing, then pick a suggestion.
+    </p>
+  </div>
+);
 
 // ---------------------------------------------------------------------------
 // Page
@@ -459,7 +577,7 @@ const AddressAutocompleteField: FC<{
 export const ApplyPage: FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
 
-  const [job, setJob] = useState<Job | null>(null);
+  const [job, setJob] = useState<JobRecord | null>(null);
   const [loadingJob, setLoadingJob] = useState(true);
   const [jobError, setJobError] = useState<string | null>(null);
 
@@ -484,7 +602,7 @@ export const ApplyPage: FC = () => {
       setLoadingJob(true);
       setJobError(null);
       try {
-        const record = await pb.collection(JOBS_COLLECTION).getOne<Job>(jobId);
+        const record = await fetchJobById(jobId);
         if (!cancelled) setJob(record);
       } catch (err) {
         console.error("Failed to load job", err);
@@ -501,6 +619,19 @@ export const ApplyPage: FC = () => {
 
   function updateField<K extends keyof ApplicationForm>(field: K, value: ApplicationForm[K]) {
     setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  // Fills Kelurahan/Kecamatan/Kota_Kabupaten/Provinsi/Zip_Code together,
+  // whichever of those fields the suggestion was picked from.
+  function applyKtpPostalEntry(entry: CariKodePosEntry) {
+    setForm((prev) => ({
+      ...prev,
+      Kelurahan: entry.village.name,
+      Kecamatan: entry.district.name,
+      Kota_Kabupaten: findMatchingCity(entry.city.name) ?? prev.Kota_Kabupaten,
+      Provinsi: entry.province.name,
+      Zip_Code: entry.code,
+    }));
   }
 
   function toggleInList(
@@ -671,154 +802,201 @@ export const ApplyPage: FC = () => {
       ? effectivePresentZip
       : form.Emergency_Contact_Zip_Code;
 
+    const isMarried = form.Marital_Status === "Married / Menikah";
+
+    const candidate: CandidateApplicationInput = {
+      candidate_code: `CAND-${Date.now()}`,
+      first_name: form.First_Name.trim(),
+      last_name: form.Last_Name.trim(),
+      age: form.Age ? Number(form.Age) : null,
+      gender: (form.Gender as Gender) || null,
+      place_of_birth: form.Place_Of_Birth.trim() || null,
+      date_of_birth: form.Date_Of_Birth || null,
+      email: form.email.trim(),
+      phone_number: form.Mobile_Phone_WA.trim() || null,
+      mobile_phone_wa: form.Mobile_Phone_WA.trim() || null,
+      identity_card_number: form.Identity_Card_Number.trim() || null,
+      family_card_number: form.Family_Card_Number.trim() || null,
+      religion: form.Religion || null,
+      marital_status: (form.Marital_Status as MaritalStatus) || null,
+      city: form.City || null,
+      applied_position: job.job_title,
+      job_id: job.id,
+      experience: experienceText || null,
+      education: form.Education || null,
+      school: form.School.trim() || null,
+      skills: skills || null,
+      certificates: certificates || null,
+      languages: languages || null,
+      notice_period: form.Notice_Period.trim() || null,
+      status: "Applied",
+      is_18_plus: form.Is_18_Plus,
+      legal_right_to_work: form.Legal_Right_To_Work,
+      former_current_mattel_employee: form.Former_Current_Mattel_Employee,
+      consent_data_collection: form.Consent_Data_Collection,
+      consent_data_usage: form.Consent_Data_Usage,
+      consent_data_retention: form.Consent_Data_Retention,
+    };
+
+    const address: CandidateAddressInput = {
+      ktp_address: form.KTP_Address.trim() || null,
+      rt: form.RT.trim() || null,
+      rw: form.RW.trim() || null,
+      kelurahan: form.Kelurahan.trim() || null,
+      kecamatan: form.Kecamatan.trim() || null,
+      kota_kabupaten: form.Kota_Kabupaten || null,
+      provinsi: form.Provinsi.trim() || null,
+      zip_code: form.Zip_Code.trim() || null,
+      present_address_same_as_ktp: form.Present_Address_Same_As_KTP,
+      present_address: effectivePresentAddress.trim() || null,
+      present_address_city: effectivePresentCity.trim() || null,
+      present_address_province: effectivePresentProvince.trim() || null,
+      present_address_zip_code: effectivePresentZip.trim() || null,
+    };
+
+    const emergencyContact: CandidateEmergencyContactInput = {
+      name: form.Emergency_Contact_Name.trim() || null,
+      relationship: form.Emergency_Contact_Relationship.trim() || null,
+      phone: form.Emergency_Contact_Phone.trim() || null,
+      address_same_as_me: form.Emergency_Contact_Address_Same_As_Me,
+      address: emergencyAddress.trim() || null,
+      city: emergencyCity.trim() || null,
+      province: emergencyProvince.trim() || null,
+      zip_code: emergencyZip.trim() || null,
+    };
+
+    // One row per ticked education level — matches candidate_education
+    // being a one-to-many table.
+    const educationRows: CandidateEducationInput[] = [];
+    if (form.Education_Levels_Selected.includes("SMA/SMK")) {
+      educationRows.push({
+        level: "SMA/SMK",
+        institution_name: form.HS_Name.trim() || null,
+        location: form.HS_Location.trim() || null,
+        major: form.HS_Major.trim() || null,
+        graduation_year: form.HS_Graduation_Year.trim() || null,
+      });
+    }
+    if (form.Education_Levels_Selected.includes("D3")) {
+      educationRows.push({
+        level: "D3",
+        institution_name: form.Academy_Name.trim() || null,
+        location: form.Academy_Location.trim() || null,
+        major: form.Academy_Major.trim() || null,
+        graduation_year: form.Academy_Graduation_Year.trim() || null,
+      });
+    }
+    if (form.Education_Levels_Selected.includes("S1")) {
+      educationRows.push({
+        level: "S1",
+        institution_name: form.Bachelor_University_Name.trim() || null,
+        location: form.Bachelor_Location.trim() || null,
+        major: form.Bachelor_Major.trim() || null,
+        graduation_year: form.Bachelor_Graduation_Year.trim() || null,
+      });
+    }
+    if (form.Education_Levels_Selected.includes("S2")) {
+      educationRows.push({
+        level: "S2",
+        institution_name: form.Master_University_Name.trim() || null,
+        location: form.Master_Location.trim() || null,
+        major: form.Master_Major.trim() || null,
+        graduation_year: form.Master_Graduation_Year.trim() || null,
+      });
+    }
+    if (form.Education_Levels_Selected.includes("S3")) {
+      educationRows.push({
+        level: "S3",
+        institution_name: form.Doctorate_University_Name.trim() || null,
+        location: form.Doctorate_Location.trim() || null,
+        major: form.Doctorate_Major.trim() || null,
+        graduation_year: form.Doctorate_Graduation_Year.trim() || null,
+      });
+    }
+
+    const employmentHistory: CandidateEmploymentHistoryInput | null = form.Company_Name_1.trim()
+      ? {
+          company_name: form.Company_Name_1.trim() || null,
+          last_position: form.Last_Position_1.trim() || null,
+          business_type: form.Business_Type_1.trim() || null,
+          job_description: form.Job_Description_1.trim() || null,
+          start_date: form.Start_Date_1 || null,
+          still_working: form.Still_Working_1,
+          finish_date: form.Still_Working_1 ? null : form.Finish_Date_1 || null,
+          reason_for_leaving: form.Still_Working_1 ? null : form.Reason_For_Leaving_1.trim() || null,
+          recent_gross_monthly_salary: form.Recent_Gross_Monthly_Salary_1
+            ? Number(form.Recent_Gross_Monthly_Salary_1)
+            : null,
+          employer_supervisor_name: form.Employer_Supervisor_Name_1.trim() || null,
+          employer_supervisor_position: form.Employer_Supervisor_Position_1.trim() || null,
+          employer_supervisor_phone: form.Employer_Supervisor_Phone_1.trim() || null,
+          period_known_of_employer: form.Period_Known_Of_Employer_1.trim() || null,
+        }
+      : null;
+
+    const family: CandidateFamilyInput | null = isMarried
+      ? {
+          spouse_name: form.Spouse_Name.trim() || null,
+          spouse_date_of_birth: form.Spouse_Date_Of_Birth || null,
+          spouse_gender: (form.Spouse_Gender as Gender) || null,
+          spouse_education: form.Spouse_Education || null,
+          number_of_child: form.Children.length,
+        }
+      : null;
+
+    const children: CandidateChildInput[] = isMarried
+      ? form.Children.map((c) => ({
+          child_name: c.Child_Name.trim() || null,
+          child_gender: (c.Child_Gender as Gender) || null,
+          child_date_of_birth: c.Child_Date_Of_Birth || null,
+          child_education: c.Child_Education || null,
+        }))
+      : [];
+
+    const applicationHistory: CandidateApplicationHistoryInput = {
+      previously_applied: (form.Previously_Applied as YesNo) || null,
+      previous_application_date:
+        form.Previously_Applied === "Yes" ? form.Previous_Application_Date || null : null,
+      previous_position_applied:
+        form.Previously_Applied === "Yes" ? form.Previous_Position_Applied.trim() || null : null,
+      objection_to_reference_check: (form.Objection_To_Reference_Check as YesNo) || null,
+      acquaintance_at_mattel: (form.Acquaintance_At_Mattel as YesNo) || null,
+      acquaintance_name:
+        form.Acquaintance_At_Mattel === "Yes" ? form.Acquaintance_Name.trim() || null : null,
+      acquaintance_relationship:
+        form.Acquaintance_At_Mattel === "Yes" ? form.Acquaintance_Relationship || null : null,
+    };
+
+    const offerDetails: CandidateOfferDetailsInput = {
+      expected_gross_monthly_salary: form.Expected_Gross_Monthly_Salary
+        ? Number(form.Expected_Gross_Monthly_Salary)
+        : null,
+      available_start_date: form.Available_Start_Date || null,
+      uniform_size: form.Uniform_Size || null,
+    };
+
     try {
-      const payload = new FormData();
-      payload.append("Candidate_ID", `CAND-${Date.now()}`);
+      const { failedSections } = await submitApplication({
+        candidate,
+        address,
+        emergencyContact,
+        education: educationRows,
+        employmentHistory,
+        family,
+        children,
+        applicationHistory,
+        offerDetails,
+        resumeFile,
+        ktpFile,
+      });
 
-      // Basic identity
-      payload.append("First_Name", form.First_Name.trim());
-      payload.append("Last_Name", form.Last_Name.trim());
-      payload.append("Age", String(Number(form.Age) || 0));
-      payload.append("email", form.email.trim());
-      payload.append("Phone_Number", form.Mobile_Phone_WA.trim());
-      payload.append("City", form.City);
-      payload.append("Applied_Position", job.Job_Title);
-      payload.append("Experience", experienceText);
-      payload.append("Education", form.Education);
-      payload.append("School", form.School.trim());
-      payload.append("Skills", skills);
-      payload.append("Notice_Period", form.Notice_Period.trim());
-      payload.append("Status", "Applied");
-      payload.append("Is_18_Plus", String(form.Is_18_Plus));
-      payload.append("Legal_Right_To_Work", String(form.Legal_Right_To_Work));
-      payload.append(
-        "Former_Current_Mattel_Employee",
-        String(form.Former_Current_Mattel_Employee)
-      );
-      payload.append("Consent_Data_Collection", String(form.Consent_Data_Collection));
-      payload.append("Consent_Data_Usage", String(form.Consent_Data_Usage));
-      payload.append("Consent_Data_Retention", String(form.Consent_Data_Retention));
-      payload.append("date", new Date().toISOString());
+      if (failedSections.length) {
+        // The core application was saved — this just tells HR (via console)
+        // that some detail sections need a manual follow-up, without
+        // blocking the applicant's confirmation screen.
+        console.warn("Application saved, but these sections failed:", failedSections);
+      }
 
-      // KTP-derived identity
-      payload.append("Gender", form.Gender);
-      payload.append("Place_Of_Birth", form.Place_Of_Birth.trim());
-      payload.append("Date_Of_Birth", form.Date_Of_Birth);
-      payload.append("KTP_Address", form.KTP_Address.trim());
-      payload.append("RT", form.RT.trim());
-      payload.append("RW", form.RW.trim());
-      payload.append("Kelurahan", form.Kelurahan.trim());
-      payload.append("Kecamatan", form.Kecamatan.trim());
-      payload.append("Kota_Kabupaten", form.Kota_Kabupaten.trim());
-      payload.append("Provinsi", form.Provinsi.trim());
-      payload.append("Zip_Code", form.Zip_Code.trim());
-
-      // Present address
-      payload.append("Present_Address_Same_As_KTP", String(form.Present_Address_Same_As_KTP));
-      payload.append("Present_Address", effectivePresentAddress.trim());
-      payload.append("Present_Address_City", effectivePresentCity.trim());
-      payload.append("Present_Address_Province", effectivePresentProvince.trim());
-      payload.append("Present_Address_Zip_Code", effectivePresentZip.trim());
-
-      // Contact / identity numbers
-      payload.append("Mobile_Phone_WA", form.Mobile_Phone_WA.trim());
-      payload.append("Identity_Card_Number", form.Identity_Card_Number.trim());
-      payload.append("Family_Card_Number", form.Family_Card_Number.trim());
-      payload.append("Religion", form.Religion);
-
-      // Emergency contact
-      payload.append("Emergency_Contact_Name", form.Emergency_Contact_Name.trim());
-      payload.append("Emergency_Contact_Relationship", form.Emergency_Contact_Relationship.trim());
-      payload.append("Emergency_Contact_Phone", form.Emergency_Contact_Phone.trim());
-      payload.append(
-        "Emergency_Contact_Address_Same_As_Me",
-        String(form.Emergency_Contact_Address_Same_As_Me)
-      );
-      payload.append("Emergency_Contact_Address", emergencyAddress.trim());
-      payload.append("Emergency_Contact_City", emergencyCity.trim());
-      payload.append("Emergency_Contact_Province", emergencyProvince.trim());
-      payload.append("Emergency_Contact_Zip_Code", emergencyZip.trim());
-
-      // Education detail
-      payload.append("Education_Levels", form.Education_Levels_Selected.join(", "));
-      payload.append("HS_Name", form.HS_Name.trim());
-      payload.append("HS_Location", form.HS_Location.trim());
-      payload.append("HS_Major", form.HS_Major.trim());
-      payload.append("HS_Graduation_Year", form.HS_Graduation_Year.trim());
-      payload.append("Academy_Name", form.Academy_Name.trim());
-      payload.append("Academy_Location", form.Academy_Location.trim());
-      payload.append("Academy_Major", form.Academy_Major.trim());
-      payload.append("Academy_Graduation_Year", form.Academy_Graduation_Year.trim());
-      payload.append("Bachelor_University_Name", form.Bachelor_University_Name.trim());
-      payload.append("Bachelor_Location", form.Bachelor_Location.trim());
-      payload.append("Bachelor_Major", form.Bachelor_Major.trim());
-      payload.append("Bachelor_Graduation_Year", form.Bachelor_Graduation_Year.trim());
-      payload.append("Master_University_Name", form.Master_University_Name.trim());
-      payload.append("Master_Location", form.Master_Location.trim());
-      payload.append("Master_Major", form.Master_Major.trim());
-      payload.append("Master_Graduation_Year", form.Master_Graduation_Year.trim());
-      payload.append("Doctorate_University_Name", form.Doctorate_University_Name.trim());
-      payload.append("Doctorate_Location", form.Doctorate_Location.trim());
-      payload.append("Doctorate_Major", form.Doctorate_Major.trim());
-      payload.append("Doctorate_Graduation_Year", form.Doctorate_Graduation_Year.trim());
-
-      // Certificates / skills / languages
-      payload.append("Certificates", certificates);
-      payload.append("Languages", languages);
-
-      // Job history (entry 1)
-      payload.append("Company_Name_1", form.Company_Name_1.trim());
-      payload.append("Last_Position_1", form.Last_Position_1.trim());
-      payload.append("Business_Type_1", form.Business_Type_1.trim());
-      payload.append("Job_Description_1", form.Job_Description_1.trim());
-      payload.append("Start_Date_1", form.Start_Date_1);
-      payload.append("Still_Working_1", String(form.Still_Working_1));
-      payload.append("Finish_Date_1", form.Still_Working_1 ? "" : form.Finish_Date_1);
-      payload.append("Reason_For_Leaving_1", form.Reason_For_Leaving_1.trim());
-      payload.append("Recent_Gross_Monthly_Salary_1", form.Recent_Gross_Monthly_Salary_1.trim());
-      payload.append("Employer_Supervisor_Name_1", form.Employer_Supervisor_Name_1.trim());
-      payload.append("Employer_Supervisor_Position_1", form.Employer_Supervisor_Position_1.trim());
-      payload.append("Employer_Supervisor_Phone_1", form.Employer_Supervisor_Phone_1.trim());
-      payload.append("Period_Known_Of_Employer_1", form.Period_Known_Of_Employer_1.trim());
-
-      // Background
-      const isMarried = form.Marital_Status === "Married / Menikah";
-      payload.append("Marital_Status", form.Marital_Status);
-      payload.append("Spouse_Name", isMarried ? form.Spouse_Name.trim() : "");
-      payload.append("Spouse_Date_Of_Birth", isMarried ? form.Spouse_Date_Of_Birth : "");
-      payload.append("Spouse_Gender", isMarried ? form.Spouse_Gender : "");
-      payload.append("Spouse_Education", isMarried ? form.Spouse_Education : "");
-      payload.append("Number_Of_Child", isMarried ? String(form.Children.length) : "0");
-      payload.append("Children", isMarried ? JSON.stringify(form.Children) : "[]");
-      payload.append("Previously_Applied", form.Previously_Applied);
-      payload.append(
-        "Previous_Application_Date",
-        form.Previously_Applied === "Yes" ? form.Previous_Application_Date : ""
-      );
-      payload.append(
-        "Previous_Position_Applied",
-        form.Previously_Applied === "Yes" ? form.Previous_Position_Applied.trim() : ""
-      );
-      payload.append("Objection_To_Reference_Check", form.Objection_To_Reference_Check);
-      payload.append("Acquaintance_At_Mattel", form.Acquaintance_At_Mattel);
-      payload.append(
-        "Acquaintance_Name",
-        form.Acquaintance_At_Mattel === "Yes" ? form.Acquaintance_Name.trim() : ""
-      );
-      payload.append(
-        "Acquaintance_Relationship",
-        form.Acquaintance_At_Mattel === "Yes" ? form.Acquaintance_Relationship : ""
-      );
-
-      // Offer details
-      payload.append("Expected_Gross_Monthly_Salary", form.Expected_Gross_Monthly_Salary.trim());
-      payload.append("Available_Start_Date", form.Available_Start_Date);
-      payload.append("Uniform_Size", form.Uniform_Size);
-
-      if (resumeFile) payload.append("Resume_Input", resumeFile);
-      if (ktpFile) payload.append("KTP_Input", ktpFile);
-
-      await pb.collection(OPERATOR_COLLECTION).create(payload);
       setSubmitted(true);
     } catch (err) {
       console.error("Failed to submit application", err);
@@ -849,7 +1027,7 @@ export const ApplyPage: FC = () => {
     );
   }
 
-  if (job.Status === "Closed") {
+  if (job.status === "Closed") {
     return (
       <div className="flex min-h-screen items-center justify-center px-6">
         <Card className="max-w-md">
@@ -857,7 +1035,7 @@ export const ApplyPage: FC = () => {
             <Briefcase className="h-10 w-10 text-muted-foreground" />
             <h2 className="text-lg font-semibold">This position is closed</h2>
             <p className="text-sm text-muted-foreground">
-              "{job.Job_Title}" is no longer accepting applications.
+              "{job.job_title}" is no longer accepting applications.
             </p>
           </CardContent>
         </Card>
@@ -873,7 +1051,7 @@ export const ApplyPage: FC = () => {
             <CheckCircle2 className="h-10 w-10 text-emerald-500" />
             <h2 className="text-lg font-semibold">Application submitted</h2>
             <p className="text-sm text-muted-foreground">
-              Thanks for applying to <span className="font-medium">{job.Job_Title}</span>. We'll
+              Thanks for applying to <span className="font-medium">{job.job_title}</span>. We'll
               be in touch if there's a match.
             </p>
           </CardContent>
@@ -889,18 +1067,18 @@ export const ApplyPage: FC = () => {
           <CardHeader>
             <div className="flex items-start justify-between gap-2">
               <div>
-                <CardTitle className="text-2xl">{job.Job_Title}</CardTitle>
-                <CardDescription className="mt-1">{job.Job_Description}</CardDescription>
+                <CardTitle className="text-2xl">{job.job_title}</CardTitle>
+                <CardDescription className="mt-1">{job.job_description}</CardDescription>
               </div>
               <Badge className="shrink-0 border-0 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                 Open
               </Badge>
             </div>
           </CardHeader>
-          {job.Requirements && (
+          {job.requirements && (
             <CardContent>
               <p className="mb-1 text-xs font-medium text-muted-foreground">Requirements</p>
-              <p className="whitespace-pre-line text-sm text-muted-foreground">{job.Requirements}</p>
+              <p className="whitespace-pre-line text-sm text-muted-foreground">{job.requirements}</p>
             </CardContent>
           )}
         </Card>
@@ -1001,7 +1179,7 @@ export const ApplyPage: FC = () => {
               </div>
 
               <Field label="Applied position" htmlFor="Applied_Position_Display">
-                <Input id="Applied_Position_Display" value={job.Job_Title} disabled />
+                <Input id="Applied_Position_Display" value={job.job_title} disabled />
               </Field>
 
               {/* --------------------------------------------------------- */}
@@ -1180,20 +1358,44 @@ export const ApplyPage: FC = () => {
                     <Input id="RW" value={form.RW} onChange={(e) => updateField("RW", e.target.value)} />
                   </Field>
                 </div>
-                <Field label="Kelurahan (Urban Village)" htmlFor="Kelurahan">
-                  <Input id="Kelurahan" value={form.Kelurahan} onChange={(e) => updateField("Kelurahan", e.target.value)} />
+                <Field label="Kelurahan (Urban Village)" htmlFor="Kelurahan" hint="pick a suggestion to auto-fill the rest">
+                  <PostalSuggestionField
+                    id="Kelurahan"
+                    value={form.Kelurahan}
+                    onChangeText={(v) => updateField("Kelurahan", v)}
+                    onSelectEntry={applyKtpPostalEntry}
+                    placeholder="e.g. Menteng"
+                  />
                 </Field>
-                <Field label="Kecamatan (Sub-District)" htmlFor="Kecamatan">
-                  <Input id="Kecamatan" value={form.Kecamatan} onChange={(e) => updateField("Kecamatan", e.target.value)} />
+                <Field label="Kecamatan (Sub-District)" htmlFor="Kecamatan" hint="pick a suggestion to auto-fill the rest">
+                  <PostalSuggestionField
+                    id="Kecamatan"
+                    value={form.Kecamatan}
+                    onChangeText={(v) => updateField("Kecamatan", v)}
+                    onSelectEntry={applyKtpPostalEntry}
+                    placeholder="e.g. Menteng"
+                  />
                 </Field>
-                <Field label="Kota / Kabupaten (City / Regency)" htmlFor="Kota_Kabupaten" required>
+                <Field label="Kota / Kabupaten (City / Regency)" htmlFor="Kota_Kabupaten" required hint="auto-filled when possible">
                   <SelectField id="Kota_Kabupaten" value={form.Kota_Kabupaten} onChange={(v) => updateField("Kota_Kabupaten", v)} options={INDONESIAN_CITIES} placeholder="Select a city…" />
                 </Field>
-                <Field label="Provinsi (Province)" htmlFor="Provinsi">
-                  <Input id="Provinsi" value={form.Provinsi} onChange={(e) => updateField("Provinsi", e.target.value)} />
+                <Field label="Provinsi (Province)" htmlFor="Provinsi" hint="pick a suggestion to auto-fill the rest">
+                  <PostalSuggestionField
+                    id="Provinsi"
+                    value={form.Provinsi}
+                    onChangeText={(v) => updateField("Provinsi", v)}
+                    onSelectEntry={applyKtpPostalEntry}
+                    placeholder="e.g. DKI Jakarta"
+                  />
                 </Field>
-                <Field label="Zip Code" htmlFor="Zip_Code">
-                  <Input id="Zip_Code" value={form.Zip_Code} onChange={(e) => updateField("Zip_Code", e.target.value)} />
+                <Field label="Zip Code" htmlFor="Zip_Code" hint="pick a suggestion to auto-fill the rest">
+                  <PostalSuggestionField
+                    id="Zip_Code"
+                    value={form.Zip_Code}
+                    onChangeText={(v) => updateField("Zip_Code", v)}
+                    onSelectEntry={applyKtpPostalEntry}
+                    placeholder="e.g. 10310"
+                  />
                 </Field>
                 <div className="sm:col-span-2">
                   <CheckboxField
@@ -1205,7 +1407,7 @@ export const ApplyPage: FC = () => {
                 </div>
                 {!form.Present_Address_Same_As_KTP && (
                   <div className="sm:col-span-2">
-                    <Field label="Present Address" htmlFor="Present_Address" required hint="start typing, then pick a suggestion">
+                    <Field label="Present Address" htmlFor="Present_Address" required>
                       <AddressAutocompleteField
                         id="Present_Address"
                         value={form.Present_Address}

@@ -7,10 +7,7 @@ import { FocusModeProvider } from './contexts/FocusModeContext';
 import { ScrollToTop } from './components/ScrollToTop';
 import { Dashboard } from './pages/Dashboard';
 import { AIAssistantWidget } from './components/FloatingHelpButton';
-import { ForYouPage } from './pages/ForYouPage';
 import { CompanyAnnouncementsPage } from './pages/CompanyAnnouncementsPage';
-import { KudosFeedPage } from './pages/KudosFeedPage';
-import { EmployeeDirectoryPage } from './pages/EmployeeDirectoryPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { ResourcesPage } from './pages/ResourcesPage';
@@ -31,23 +28,8 @@ const AppRoutes: FC = () => {
       />
 
       <Route
-        path="/for-you"
-        element={<ForYouPage />}
-      />
-
-      <Route
         path="/announcements"
         element={<CompanyAnnouncementsPage />}
-      />
-
-      <Route
-        path="/kudos"
-        element={<KudosFeedPage />}
-      />
-
-      <Route
-        path="/employees"
-        element={<EmployeeDirectoryPage />}
       />
 
       <Route
