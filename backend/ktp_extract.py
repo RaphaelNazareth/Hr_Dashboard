@@ -128,6 +128,7 @@ def extract_ktp_with_gemini(file_path: str | Path) -> dict:
         "nama": string | null,
         "tempat_lahir": string | null,
         "tanggal_lahir": string | null,
+        "age": integer | null,
         "jenis_kelamin": string | null,
         "golongan_darah": string | null,
         "alamat": string | null,
@@ -151,6 +152,7 @@ def extract_ktp_with_gemini(file_path: str | Path) -> dict:
       present (the card typically prints it as part of "Tempat/Tgl Lahir",
       e.g. "JAKARTA, 17-08-1990" -> tempat_lahir "Jakarta", tanggal_lahir
       "1990-08-17").
+    - calculate age from tanggal_lahir if present, otherwise return null.
     - jenis_kelamin must be exactly one of: {GENDER_OPTIONS}.
     - agama must be exactly one of: {RELIGION_OPTIONS}. Map the card's
       printed value (e.g. "ISLAM") to the closest matching option; use

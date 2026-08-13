@@ -416,29 +416,66 @@ def extract_information_with_gemini(cv_text: str) -> dict:
     {{
         "first_name": string | null,
         "last_name": string | null,
-        "age": integer | null,
         "email": string | null,
         "phone": string | null,
         "city": string | null,
         "highest_education": string | null,
         "school_name": string | null,
+        "educations": [
+            {{
+                "level": string,
+                "institution_name": string | null,
+                "location": string | null,
+                "major": string | null,
+                "graduation_year": string | null
+            }}
+        ],
         "work_experience_years": number | null,
         "skills": [string],
         "ex_mattel_employee": boolean,
+        "latest_employment": {{
+            "company_name": string | null,
+            "position": string | null,
+            "business_type": string | null,
+            "job_description": string | null,
+            "start_date": string | null,
+            "still_working": boolean | null,
+            "end_date": string | null
+        }} | null
     }}
 
     Rules:
 
     - Standardize capitalization for names, cities, and school names to proper title case (e.g. "JOHN DOE" -> "John Doe", "UNIVERSITAS INDONESIA" -> "Universitas Indonesia"), unless it's a known acronym (e.g. "ITB", "UI", "SMA").
     - If the CV only contains one name (e.g. "Sukarno"), use it as first_name and set last_name to null.
-    - Calculate age if only birth date is available.
     - work_experience_years should be the total duration of all professional work experience.
     - ex_mattel_employee is true if any company in work_experience is PT Mattel Indonesia or Mattel.
     - school_name should refer to the institution of the highest education only.
     - city should contain only the city or regency name, not the full address.
     - skills should contain only actual skills, not hobbies or interests.
     - Return valid JSON only.
-    - Limit the selection of highest education to "SD", "SMP", "SMA/SMK", "D3", "D4", "S1", "S2", "S3". If doesn't match, return "Other / Lainnya".
+    - Limit the selection of highest education (and each "level" in educations)
+      to "SD", "SMP", "SMA/SMK", "D3", "D4", "S1", "S2", "S3". If it doesn't
+      match, return "Other / Lainnya".
+    - educations should list up to the 3 most recent formal education entries
+      (schools, colleges, universities only -- not short courses or
+      certifications), ordered most recent / highest level first. Include an
+      entry even if some of its fields (institution_name, location, major,
+      graduation_year) are null, as long as the level itself is identifiable.
+      If the CV only clearly documents one level of education, return an
+      array with just that one entry rather than inventing earlier ones.
+    - latest_employment should describe only the single most recent job
+      (by end date, or ongoing if still_working). Only fill fields that are
+      explicitly stated in the CV -- do not infer or guess business_type,
+      job_description, or dates that aren't written down. If the CV lists
+      no work history at all, return null for latest_employment entirely
+      rather than an object of nulls.
+    - start_date and end_date should be formatted as YYYY-MM-DD if a full
+      date is available, or YYYY-MM if only month/year is given. If neither
+      is derivable, return null rather than guessing a day or month.
+    - still_working should be true only if the CV explicitly indicates the
+      position is current (e.g. "Present", "Sekarang", no end date given
+      alongside language implying it's ongoing).
 
     CV TEXT:
 

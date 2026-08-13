@@ -62,6 +62,30 @@ const MARITAL_STATUS_OPTIONS = [
 
 const EDUCATION_LEVEL_CHECKBOXES: EducationLevel[] = ["SMA/SMK", "D3", "S1", "S2", "S3"];
 
+// Maps a CV-extracted education level onto the matching form block. There's
+// no separate D4 checkbox/block in the UI, so D4 entries fold into the D3
+// (Academy_*) block same as they would if a person just ticked "D3" by hand.
+// SD/SMP/"Other / Lainnya" have no block to fill and are skipped entirely.
+const EDUCATION_LEVEL_TO_BLOCK: Partial<
+  Record<
+    string,
+    {
+      checkbox: EducationLevel;
+      name: keyof ApplicationForm;
+      location: keyof ApplicationForm;
+      major: keyof ApplicationForm;
+      year: keyof ApplicationForm;
+    }
+  >
+> = {
+  "SMA/SMK": { checkbox: "SMA/SMK", name: "HS_Name", location: "HS_Location", major: "HS_Major", year: "HS_Graduation_Year" },
+  D3: { checkbox: "D3", name: "Academy_Name", location: "Academy_Location", major: "Academy_Major", year: "Academy_Graduation_Year" },
+  D4: { checkbox: "D3", name: "Academy_Name", location: "Academy_Location", major: "Academy_Major", year: "Academy_Graduation_Year" },
+  S1: { checkbox: "S1", name: "Bachelor_University_Name", location: "Bachelor_Location", major: "Bachelor_Major", year: "Bachelor_Graduation_Year" },
+  S2: { checkbox: "S2", name: "Master_University_Name", location: "Master_Location", major: "Master_Major", year: "Master_Graduation_Year" },
+  S3: { checkbox: "S3", name: "Doctorate_University_Name", location: "Doctorate_Location", major: "Doctorate_Major", year: "Doctorate_Graduation_Year" },
+};
+
 const UNIFORM_SIZES = ["S", "M", "L", "XL", "XXL", "XXXL", "XXXXL"];
 
 const CERTIFICATE_OPTIONS = ["STR", "Komputer", "Forklift"];
@@ -81,6 +105,42 @@ const SKILL_OPTIONS = [
   "Macro Excel",
   "Power BI",
 ];
+
+// Loose matching between a CV's free-text skill ("CNC Dasar", "Microsoft
+// Office", "Ms Excel") and a checkbox option ("CNC", "Microsoft Office
+// (Word, Excel, PowerPoint)"). Exact-string matching missed cases like
+// this entirely, since real CVs almost never phrase a skill exactly the
+// way the checkbox label does.
+//
+// For an option with a parenthetical list (e.g. "Microsoft Office (Word,
+// Excel, PowerPoint)"), each of the primary phrase AND each comma-split
+// item inside the parentheses counts as a standalone alias — so a CV
+// that just says "Excel" still ticks the Microsoft Office box.
+function skillOptionAliases(option: string): string[] {
+  const parenMatch = option.match(/^(.*?)\s*\((.*)\)\s*$/);
+  if (parenMatch) {
+    const primary = parenMatch[1].trim();
+    const alts = parenMatch[2].split(",").map((s) => s.trim());
+    return [primary, ...alts].map((s) => s.toLowerCase()).filter(Boolean);
+  }
+  return [option.trim().toLowerCase()];
+}
+
+function skillMatchesOption(extractedSkill: string, option: string): boolean {
+  const extracted = extractedSkill.trim().toLowerCase();
+  if (!extracted) return false;
+  return skillOptionAliases(option).some((alias) => {
+    if (!alias) return false;
+    // "cnc dasar".includes("cnc") -> true; safe in both directions since
+    // aliases are fixed, known-good strings. The reverse direction
+    // (alias.includes(extracted)) is gated to extracted.length >= 4 so a
+    // short/generic extracted term (e.g. "or") doesn't spuriously match
+    // half the option list.
+    if (extracted.includes(alias)) return true;
+    if (extracted.length >= 4 && alias.includes(extracted)) return true;
+    return false;
+  });
+}
 
 const LANGUAGE_OPTIONS = ["Bahasa Indonesia", "English", "Mandarin", "Japanese", "Korean", "Other"];
 
@@ -585,7 +645,7 @@ export const ApplyPage: FC = () => {
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [ktpFile, setKtpFile] = useState<File | null>(null);
   const [extractingCV, setExtractingCV] = useState(false);
-  const [extractingKTP] = useState(false);
+  const [extractingKTP, setExtractingKTP] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
@@ -749,34 +809,184 @@ export const ApplyPage: FC = () => {
       if (!res.ok) throw new Error(`Server responded ${res.status}`);
       const data = await res.json();
 
-      setForm((prev) => ({
-        ...prev,
-        First_Name: applyAutoFilled(prev, "First_Name", data.first_name),
-        Last_Name: applyAutoFilled(prev, "Last_Name", data.last_name),
-        Age: applyAutoFilled(prev, "Age", data.age != null ? String(data.age) : null),
-        email: applyAutoFilled(prev, "email", data.email),
-        Phone_Number: applyAutoFilled(prev, "Phone_Number", data.phone),
-        Mobile_Phone_WA: applyAutoFilled(prev, "Mobile_Phone_WA", data.phone),
-        City: applyAutoFilled(prev, "City", data.city),
-        ExperienceYears: applyAutoFilled(
-          prev,
-          "ExperienceYears",
-          data.work_experience_years != null ? String(data.work_experience_years) : null
-        ),
-        Education: applyAutoFilled(prev, "Education", data.highest_education),
-        School: applyAutoFilled(prev, "School", data.school_name),
-        skillsOther: applyAutoFilled(
-          prev,
+      setForm((prev) => {
+        let next: ApplicationForm = {
+          ...prev,
+          First_Name: applyAutoFilled(prev, "First_Name", data.first_name),
+          Last_Name: applyAutoFilled(prev, "Last_Name", data.last_name),
+          Age: applyAutoFilled(prev, "Age", data.age != null ? String(data.age) : null),
+          email: applyAutoFilled(prev, "email", data.email),
+          Phone_Number: applyAutoFilled(prev, "Phone_Number", data.phone),
+          Mobile_Phone_WA: applyAutoFilled(prev, "Mobile_Phone_WA", data.phone),
+          City: applyAutoFilled(prev, "City", data.city),
+          ExperienceYears: applyAutoFilled(
+            prev,
+            "ExperienceYears",
+            data.work_experience_years != null ? String(data.work_experience_years) : null
+          ),
+          Education: applyAutoFilled(prev, "Education", data.highest_education),
+          School: applyAutoFilled(prev, "School", data.school_name),
+          // Routed through applyAutoFilled like everything else now, rather
+          // than a bare "?? prev" fallback, so a manual correction (e.g. the
+          // CV misread this and the person unticks it) sticks instead of
+          // getting reset by a later re-upload of the same file.
+          Former_Current_Mattel_Employee: applyAutoFilled(
+            prev,
+            "Former_Current_Mattel_Employee",
+            data.ex_mattel_employee ?? null
+          ),
+          // Auto-tick "18 or older" when the CV gives us an age that
+          // clears the bar. This is a convenience, not a substitute for
+          // the person's own confirmation — validate() still requires the
+          // checkbox regardless of how it got ticked, and they can untick
+          // it themselves if the CV's age is wrong.
+          Is_18_Plus: applyAutoFilled(
+            prev,
+            "Is_18_Plus",
+            typeof data.age === "number" ? data.age >= 18 : null
+          ),
+        };
+
+        // --- Education: fill up to the 3 most recent entries into their
+        // matching blocks (HS / Academy / Bachelor / Master / Doctorate).
+        // Each field within a block is still individually protected by
+        // applyAutoFilled, so a block the user already started filling in
+        // by hand won't get clobbered. The checkbox list itself only gets
+        // auto-ticked if the user hasn't ticked anything yet — we don't
+        // want to silently tick/untick boxes someone already curated.
+        const educations = Array.isArray(data.educations) ? data.educations.slice(0, 3) : [];
+        const newlyTickedLevels: EducationLevel[] = [];
+
+        for (const entry of educations) {
+          const mapping = entry?.level ? EDUCATION_LEVEL_TO_BLOCK[entry.level] : undefined;
+          if (!mapping) continue; // SD / SMP / "Other / Lainnya" — no block for these
+
+          next = {
+            ...next,
+            [mapping.name]: applyAutoFilled(next, mapping.name, entry.institution_name),
+            [mapping.location]: applyAutoFilled(next, mapping.location, entry.location),
+            [mapping.major]: applyAutoFilled(next, mapping.major, entry.major),
+            [mapping.year]: applyAutoFilled(next, mapping.year, entry.graduation_year),
+          };
+          if (!newlyTickedLevels.includes(mapping.checkbox)) newlyTickedLevels.push(mapping.checkbox);
+        }
+
+        if (prev.Education_Levels_Selected.length === 0 && newlyTickedLevels.length > 0) {
+          next.Education_Levels_Selected = newlyTickedLevels;
+        }
+
+        // --- Skills: check off anything that loosely matches an option in
+        // SKILL_OPTIONS (see skillMatchesOption above — "CNC Dasar" ticks
+        // "CNC", "Excel" ticks the Microsoft Office option, etc.), put
+        // whatever's left over in the free-text field — same split pattern
+        // as certificatesSelected/certificatesOther.
+        const extractedSkills: string[] = Array.isArray(data.skills) ? data.skills : [];
+        const matchedSkills = SKILL_OPTIONS.filter((opt) =>
+          extractedSkills.some((s) => skillMatchesOption(s, opt))
+        );
+        const unmatchedSkills = extractedSkills.filter(
+          (s) => !SKILL_OPTIONS.some((opt) => skillMatchesOption(s, opt))
+        );
+
+        if (prev.skillsSelected.length === 0 && matchedSkills.length > 0) {
+          next.skillsSelected = matchedSkills;
+        }
+        next.skillsOther = applyAutoFilled(
+          next,
           "skillsOther",
-          Array.isArray(data.skills) && data.skills.length ? data.skills.join(", ") : null
-        ),
-        Former_Current_Mattel_Employee:
-          data.ex_mattel_employee ?? prev.Former_Current_Mattel_Employee,
-      }));
+          unmatchedSkills.length ? unmatchedSkills.join(", ") : null
+        );
+
+        // --- Latest employment: fills the "Riwayat Pekerjaan Terakhir"
+        // block as best it can. Only company/position/business type/
+        // description/dates come from the CV — supervisor name, phone,
+        // salary, and reason for leaving are essentially never printed on
+        // a CV, so those stay blank for the person to fill in rather than
+        // risk the model inventing plausible-looking contact details.
+        const employment = data.latest_employment;
+        if (employment) {
+          next = {
+            ...next,
+            Company_Name_1: applyAutoFilled(next, "Company_Name_1", employment.company_name),
+            Last_Position_1: applyAutoFilled(next, "Last_Position_1", employment.position),
+            Business_Type_1: applyAutoFilled(next, "Business_Type_1", employment.business_type),
+            Job_Description_1: applyAutoFilled(next, "Job_Description_1", employment.job_description),
+            Start_Date_1: applyAutoFilled(next, "Start_Date_1", employment.start_date),
+            Still_Working_1: applyAutoFilled(
+              next,
+              "Still_Working_1",
+              typeof employment.still_working === "boolean" ? employment.still_working : null
+            ),
+            Finish_Date_1: applyAutoFilled(
+              next,
+              "Finish_Date_1",
+              employment.still_working ? null : employment.end_date
+            ),
+          };
+        }
+
+        return next;
+      });
     } catch (err) {
       console.error("CV extraction failed", err);
     } finally {
       setExtractingCV(false);
+    }
+  }
+
+  async function handleKtpUpload(file: File | null) {
+    setKtpFile(file);
+    if (!file) return;
+
+    setExtractingKTP(true);
+    setFormError(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("http://127.0.0.1:8000/api/extract-ktp", {
+        method: "POST",
+        body,
+      });
+
+      if (!res.ok) throw new Error(`Server responded ${res.status}`);
+      const data = await res.json();
+
+      setForm((prev) => {
+        const [ktpFirstName, ...ktpLastNameParts] = (data.nama ?? "").trim().split(/\s+/);
+        const ktpLastName = ktpLastNameParts.join(" ");
+
+        return {
+          ...prev,
+          First_Name: applyAutoFilled(prev, "First_Name", data.nama ? ktpFirstName : null),
+          Last_Name: applyAutoFilled(prev, "Last_Name", data.nama ? ktpLastName : null),
+          Gender: applyAutoFilled(prev, "Gender", data.jenis_kelamin),
+          Place_Of_Birth: applyAutoFilled(prev, "Place_Of_Birth", data.tempat_lahir),
+          Date_Of_Birth: applyAutoFilled(prev, "Date_Of_Birth", data.tanggal_lahir),
+          KTP_Address: applyAutoFilled(prev, "KTP_Address", data.alamat),
+          RT: applyAutoFilled(prev, "RT", data.rt),
+          RW: applyAutoFilled(prev, "RW", data.rw),
+          Kelurahan: applyAutoFilled(prev, "Kelurahan", data.kelurahan_desa),
+          Kecamatan: applyAutoFilled(prev, "Kecamatan", data.kecamatan),
+          Kota_Kabupaten: applyAutoFilled(prev, "Kota_Kabupaten", data.kota_kabupaten),
+          Provinsi: applyAutoFilled(prev, "Provinsi", data.provinsi),
+          Religion: applyAutoFilled(prev, "Religion", data.agama),
+          Marital_Status: applyAutoFilled(prev, "Marital_Status", data.status_perkawinan),
+          // Only auto-fill the NIK if the extractor was confident it read
+          // all 16 digits correctly — an unconfident guess is worse than
+          // leaving it blank for the person to type themselves, since
+          // validate() will reject anything that isn't exactly 16 digits
+          // with no indication of why.
+          Identity_Card_Number: applyAutoFilled(
+            prev,
+            "Identity_Card_Number",
+            data.nik_confident ? data.nik : null
+          ),
+        };
+      });
+    } catch (err) {
+      console.error("KTP extraction failed", err);
+    } finally {
+      setExtractingKTP(false);
     }
   }
 
@@ -1266,8 +1476,9 @@ export const ApplyPage: FC = () => {
                     Indonesian Identity Card (KTP)
                   </Label>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Upload your Indonesian Identity Card (KTP). Automatic extraction will be
-                    available soon.
+                    Upload your Indonesian Identity Card (KTP). We'll automatically extract
+                    information and fill in the application form for you. Please review the
+                    information before submitting.
                   </p>
                   <ul className="mt-2 ml-5 list-disc text-xs text-muted-foreground">
                     <li>Full Name</li>
@@ -1280,7 +1491,7 @@ export const ApplyPage: FC = () => {
                     id="KTP_Input"
                     type="file"
                     accept=".pdf,image/*"
-                    onChange={(e) => setKtpFile(e.target.files?.[0] ?? null)}
+                    onChange={(e) => handleKtpUpload(e.target.files?.[0] ?? null)}
                     className="mt-3 cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary hover:file:bg-primary/20"
                   />
                   {ktpFile && (
