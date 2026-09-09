@@ -1,0 +1,29 @@
+# HR Dashboard backend dependencies (Python 3.11)
+# Install:  python -m pip install -r requirements.txt
+
+# --- Web framework / server ---
+fastapi
+uvicorn[standard]
+python-multipart          # required by FastAPI for UploadFile / multipart form uploads
+
+# --- Config & validation ---
+pydantic
+pydantic-settings
+python-dotenv
+
+# --- Local AI (Ollama chat via /controller/chat) ---
+ollama                    # needs the Ollama daemon running: `ollama serve`
+psycopg[binary]           # ATS tool queries against Supabase Postgres
+
+# --- Google Gemini (CV + KTP extraction) ---
+google-genai
+
+# --- Document / image processing ---
+PyMuPDF                   # imported as `fitz` — PDF text extraction
+Pillow                    # imported as `PIL` — image handling
+pytesseract               # OCR wrapper; ALSO needs the Tesseract binary on PATH
+
+# --- Utilities ---
+rapidfuzz                 # fuzzy city matching
+httpx                     # HTTP client
+resend                    # transactional email

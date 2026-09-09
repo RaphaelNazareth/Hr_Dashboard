@@ -1,36 +1,17 @@
 import { useEffect, useState, type FC } from 'react';
 import { Link } from 'react-router-dom';
-import PocketBase from 'pocketbase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sparkles, ArrowRight, Loader2 } from 'lucide-react';
 import { useWaveAnimation } from '@/hooks/useWaveAnimation';
+import {
+  fetchRecentActivity,
+  NOTE_STAGE,
+  type RecentActivityEntry,
+} from '@/lib/candidateBoard';
 
-const pb = new PocketBase(
-  import.meta.env.VITE_POCKETBASE_URL || 'http://127.0.0.1:8090'
-);
-pb.autoCancellation(false);
-
-const TRACKING_COLLECTION = 'Candidate_Tracking';
 const DISPLAY_LIMIT = 3;
-
-interface TrackingEntry {
-  id: string;
-  candidate_id: string;
-  Applied_Position: string;
-  Stage: string;
-  Date: string;
-  Notes: string;
-  created: string;
-  expand?: {
-    candidate_id?: {
-      id: string;
-      First_Name: string;
-      Last_Name: string;
-    };
-  };
-}
 
 // Maps a stage name to an emoji + short verb so the feed reads like a kudos
 // wall rather than a raw status log. Falls back to a generic "moved to"
@@ -38,6 +19,7 @@ interface TrackingEntry {
 function getStageFlavor(stage: string): { emoji: string; verb: string } {
   const s = stage.toLowerCase();
 
+  if (s === NOTE_STAGE.toLowerCase()) return { emoji: '📝', verb: 'had a note added for' };
   if (s.includes('hired')) return { emoji: '🏆', verb: 'was hired for' };
   if (s.includes('reject')) return { emoji: '👋', verb: 'was not moving forward in' };
   if (s.includes('offering') || s.includes('offer')) return { emoji: '🎁', verb: 'received an offer for' };
@@ -84,7 +66,7 @@ function formatRelativeTime(iso: string) {
 export const RecentActivity: FC = () => {
   const { containerRef, getItemStyle, getItemClassName } = useWaveAnimation();
 
-  const [entries, setEntries] = useState<TrackingEntry[]>([]);
+  const [entries, setEntries] = useState<RecentActivityEntry[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,15 +78,10 @@ export const RecentActivity: FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const result = await pb
-          .collection(TRACKING_COLLECTION)
-          .getList<TrackingEntry>(1, DISPLAY_LIMIT, {
-            sort: '-Date',
-            expand: 'candidate_id',
-          });
+        const { entries: items, total } = await fetchRecentActivity(DISPLAY_LIMIT);
         if (!cancelled) {
-          setEntries(result.items);
-          setTotalCount(result.totalItems);
+          setEntries(items);
+          setTotalCount(total);
         }
       } catch (err) {
         console.error('Failed to load recent activity', err);
@@ -159,11 +136,12 @@ export const RecentActivity: FC = () => {
         {!loading && !error && entries.length > 0 && (
           <div className="space-y-3">
             {entries.map((entry, index) => {
-              const candidate = entry.expand?.candidate_id;
+              const candidate = entry.candidate;
               const name = candidate
-                ? `${candidate.First_Name} ${candidate.Last_Name}`.trim()
+                ? `${candidate.first_name ?? ''} ${candidate.last_name ?? ''}`.trim() || 'A candidate'
                 : 'A candidate';
-              const { emoji, verb } = getStageFlavor(entry.Stage);
+              const position = candidate?.applied_position;
+              const { emoji, verb } = getStageFlavor(entry.stage);
 
               const content = (
                 <div
@@ -180,21 +158,21 @@ export const RecentActivity: FC = () => {
                         <p className="text-sm leading-snug">
                           <span className="font-medium">{name}</span>{' '}
                           <span className="text-muted-foreground">{verb}</span>{' '}
-                          {entry.Applied_Position && (
-                            <span className="font-medium">{entry.Applied_Position}</span>
+                          {position && (
+                            <span className="font-medium">{position}</span>
                           )}
                         </p>
                         <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                          {formatRelativeTime(entry.Date || entry.created)}
+                          {formatRelativeTime(entry.moved_at || entry.created_at)}
                         </span>
                       </div>
-                      {entry.Notes && (
+                      {entry.notes && (
                         <p className="text-xs text-muted-foreground line-clamp-2">
-                          {entry.Notes}
+                          {entry.notes}
                         </p>
                       )}
-                      <Badge variant="outline" className={getStageBadgeClass(entry.Stage)}>
-                        {entry.Stage}
+                      <Badge variant="outline" className={getStageBadgeClass(entry.stage)}>
+                        {entry.stage}
                       </Badge>
                     </div>
                   </div>

@@ -258,6 +258,51 @@ export async function fetchTrackingHistory(candidateId: string): Promise<Trackin
   return (data ?? []) as TrackingRecord[];
 }
 
+// ---------------------------------------------------------------------------
+// Recent activity — pipeline movement across ALL candidates, newest first.
+// Powers the dashboard feed. The candidate is embedded because the feed needs
+// a display name and the role applied for; note that `applied_position` lives
+// on `candidates`, not on the tracking row itself.
+// ---------------------------------------------------------------------------
+export type RecentActivityCandidate = Pick<
+  CandidateRecord,
+  "id" | "first_name" | "last_name" | "applied_position"
+>;
+
+export interface RecentActivityEntry extends TrackingRecord {
+  candidate: RecentActivityCandidate | null;
+}
+
+export async function fetchRecentActivity(
+  limit: number
+): Promise<{ entries: RecentActivityEntry[]; total: number }> {
+  const { data, error, count } = await supabase
+    .from(TRACKING_TABLE)
+    .select(
+      "id, candidate_id, stage, moved_at, notes, created_at, candidate:candidates(id, first_name, last_name, applied_position)",
+      { count: "exact" }
+    )
+    .order("moved_at", { ascending: false })
+    .order("created_at", { ascending: false }) // stable tiebreak when moved_at is date-only
+    .limit(limit);
+
+  if (error) throw error;
+
+  // PostgREST can type a many-to-one embed as an array; normalise to one row.
+  const entries = (data ?? []).map((row) => {
+    const { candidate, ...rest } = row as TrackingRecord & {
+      candidate: RecentActivityCandidate | RecentActivityCandidate[] | null;
+    };
+    return {
+      ...rest,
+      candidate: Array.isArray(candidate) ? candidate[0] ?? null : candidate ?? null,
+    };
+  }) as RecentActivityEntry[];
+
+  // `count` is the total number of tracking rows, not just the page we fetched.
+  return { entries, total: count ?? entries.length };
+}
+
 // There's no free-text `notes` column on candidates in the schema, so notes
 // are modeled as their own append-only entries in candidate_tracking
 // (stage = "Note"). This keeps every note timestamped and attributable

@@ -74,6 +74,8 @@ interface ChatResponse {
   actions: UIAction[];
   tool_trace: Array<{ tool: string; arguments: Record<string, any>; result_preview: unknown }>;
   model_used: string;
+  intent?: string;
+  session_id?: string;
 }
 
 interface AIAssistantWidgetProps {
@@ -93,8 +95,14 @@ export const AIAssistantWidget: FC<AIAssistantWidgetProps> = ({ userName = 'ther
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  // Which local model answered last — shown in the header subtitle.
+  const [model, setModel] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  // Keys the backend's memory of this conversation — which candidate is "her",
+  // what the last search filtered on. A ref, not state: it must never change
+  // identity on re-render, or the assistant forgets mid-conversation.
+  const sessionIdRef = useRef<string>(crypto.randomUUID());
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -113,10 +121,10 @@ export const AIAssistantWidget: FC<AIAssistantWidgetProps> = ({ userName = 'ther
       .filter((m) => !m.isError)
       .map((m) => ({ role: m.role, content: m.content }));
 
-    const res = await fetch(`${API_URL}/chat`, {
+    const res = await fetch(`${API_URL}/controller/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history }),
+      body: JSON.stringify({ message, history, session_id: sessionIdRef.current }),
     });
 
     if (!res.ok) {
@@ -139,6 +147,7 @@ export const AIAssistantWidget: FC<AIAssistantWidgetProps> = ({ userName = 'ther
 
     try {
       const data = await callBackend(trimmed, priorMessages);
+      setModel(data.model_used);
       setMessages((prev) => [
         ...prev,
         { id: crypto.randomUUID(), role: 'assistant', content: data.reply, actions: data.actions },
@@ -212,7 +221,9 @@ export const AIAssistantWidget: FC<AIAssistantWidgetProps> = ({ userName = 'ther
               </div>
               <div>
                 <p className="text-sm font-semibold leading-none">HR Assistant</p>
-                <p className="text-[11px] text-primary-foreground/80 mt-0.5">Online</p>
+                <p className="text-[11px] text-primary-foreground/80 mt-0.5">
+                  {model ? `Online · ${model}` : 'Online'}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -231,6 +242,12 @@ export const AIAssistantWidget: FC<AIAssistantWidgetProps> = ({ userName = 'ther
                 onClick={() => {
                   setIsOpen(false);
                   setMessages([]);
+                  setModel(null);
+                  // Clearing the transcript has to clear the server's memory
+                  // too, or the next conversation starts out thinking "her"
+                  // still means whoever was discussed in this one. A new id is
+                  // enough — the abandoned session expires on its own.
+                  sessionIdRef.current = crypto.randomUUID();
                 }}
               >
                 <X size={16} />
