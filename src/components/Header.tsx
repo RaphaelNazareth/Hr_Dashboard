@@ -25,7 +25,7 @@ export const Header: FC = () => {
 
   // Core navigation items (always visible)
   const coreNavItems = [
-    { path: '/', label: 'Dashboard', icon: Home },
+    { path: '/dashboard', label: 'Dashboard', icon: Home },
     { path: '/calendar', label: 'Calendar', icon: Calendar },
     { path: '/jobs', label: 'Open Jobs', icon: Briefcase },
     { path: '/candidates', label: 'Candidates', icon: Users },
@@ -40,7 +40,7 @@ export const Header: FC = () => {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
           {/* Left side - Logo */}
           <div className="flex items-center gap-6">
-            <Link to="/" className="flex items-center gap-2">
+            <Link to="/dashboard" className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
                 <img src="/Mattel.svg" alt="Mattel" className="h-6 w-6" />
               </div>

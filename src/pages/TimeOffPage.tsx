@@ -363,7 +363,7 @@ export const TimeOffPage: FC = () => {
         {/* Header Section */}
         <PageSection index={0} className="mb-6">
           <div className="flex items-center gap-4 mb-4">
-            <Link to="/">
+            <Link to="/dashboard">
               <Button variant="ghost" size="sm" className="gap-2">
                 <ArrowLeft className="h-4 w-4" />
                 Back to Dashboard

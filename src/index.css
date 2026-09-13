@@ -167,3 +167,151 @@
   mix-blend-mode: normal;
 }
 /* Theme Mode Ripple Reveal animations css ends */
+/* ==========================================================================
+   Public careers site ("editorial" design system)
+   Tokens + utilities used by src/components/{site,sections,jobs} and
+   src/pages/LandingPage.tsx. Scoped visuals live under `.site-scope`.
+   ========================================================================== */
+
+@theme {
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans-site: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink: #16130f;
+  --color-ink-foreground: #f7f4ef;
+  --color-ink-muted: #a9a29a;
+  --color-ink-border: #ffffff26;
+  --color-paper: #faf8f4;
+  --color-paper-2: #f1ece4;
+  --color-sun: #f2c318;
+  --color-sun-foreground: #1a1512;
+  --color-brand: #d6402a;
+
+  --ease-editorial: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The dashboard supports dark mode; the careers site is intentionally always
+   light, so pin the shared shadcn tokens inside its scope. */
+.site-scope {
+  font-family: var(--font-sans-site);
+  --background: #ffffff;
+  --foreground: #16130f;
+  --card: #f7f4ef;
+  --card-foreground: #16130f;
+  --muted: #f1ece4;
+  --muted-foreground: #6f6862;
+  --border: #e4ddd3;
+  --input: #e4ddd3;
+  --ring: #16130f;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.container-editorial {
+  width: 100%;
+  margin-inline: auto;
+  max-width: 88rem;
+  padding-inline: 1.25rem;
+}
+@media (min-width: 640px) {
+  .container-editorial { padding-inline: 2rem; }
+}
+@media (min-width: 1024px) {
+  .container-editorial { padding-inline: 3rem; }
+}
+
+.display-xl,
+.display-lg,
+.display-md {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+}
+.display-xl { font-size: clamp(2.75rem, 7.5vw, 6.5rem); }
+.display-lg { font-size: clamp(2.1rem, 4.6vw, 3.75rem); line-height: 1.06; }
+.display-md { font-size: clamp(1.7rem, 3vw, 2.5rem); line-height: 1.12; }
+
+.eyebrow {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.text-balance-pretty {
+  text-wrap: balance;
+}
+
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Scroll-reveal — Reveal.tsx flips data-inview via IntersectionObserver. */
+.reveal {
+  opacity: 0;
+  transform: translate3d(0, 1.25rem, 0);
+  transition: opacity 800ms var(--ease-editorial), transform 800ms var(--ease-editorial);
+}
+.reveal[data-inview="true"] { opacity: 1; transform: none; }
+.reveal-delay-1 { transition-delay: 110ms; }
+.reveal-delay-2 { transition-delay: 220ms; }
+.reveal-delay-3 { transition-delay: 330ms; }
+
+.img-zoom { overflow: hidden; }
+.img-zoom img {
+  transition: transform 900ms var(--ease-editorial);
+  will-change: transform;
+}
+.img-zoom:hover img { transform: scale(1.05); }
+
+/* Underline that draws in from the left on hover. */
+.link-draw { position: relative; }
+.link-draw::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -0.2em;
+  height: 1px;
+  width: 100%;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 450ms var(--ease-editorial);
+}
+.link-draw:hover::after { transform: scaleX(1); }
+
+.arrow-nudge svg { transition: transform 400ms var(--ease-editorial); }
+.group:hover .arrow-nudge svg,
+.arrow-nudge:hover svg { transform: translateX(0.25rem); }
+
+.timeline-dot {
+  display: block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 9999px;
+  border: 2px solid var(--color-brand);
+  background: var(--background);
+}
+
+/* Minimal stand-in for tailwindcss-animate's enter utilities. */
+@keyframes site-enter {
+  from {
+    opacity: var(--enter-opacity, 1);
+    transform: translate3d(0, var(--enter-translate-y, 0), 0);
+  }
+}
+.animate-in {
+  animation: site-enter var(--enter-duration, 700ms) var(--ease-editorial) both;
+}
+.fade-in { --enter-opacity: 0; }
+.slide-in-from-bottom-2 { --enter-translate-y: 0.5rem; }
+.slide-in-from-bottom-3 { --enter-translate-y: 0.75rem; }
+.slide-in-from-bottom-4 { --enter-translate-y: 1rem; }
+.fill-mode-both { animation-fill-mode: both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .animate-in { animation: none; }
+  .img-zoom img { transition: none; }
+}

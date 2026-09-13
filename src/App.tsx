@@ -1,6 +1,6 @@
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { type FC } from 'react';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './components/ThemeProvider';
 import { FocusModeProvider } from './contexts/FocusModeContext';
@@ -18,12 +18,19 @@ import { RecruitmentBoard } from './pages/RecruitmentProcess';
 import { ProfilesPage } from './pages/Profiles';
 import { JobsPage } from './pages/JobsPage';
 import { ApplyPage } from './pages/ApplyPage';
+import { LandingPage } from './pages/LandingPage';
 
 const AppRoutes: FC = () => {
   return (
     <Routes>
+      {/* Public careers landing page */}
       <Route
         path="/"
+        element={<LandingPage />}
+      />
+
+      <Route
+        path="/dashboard"
         element={<Dashboard />}
       />
 
@@ -91,6 +98,13 @@ const AppRoutes: FC = () => {
   );
 };
 
+/** The AI helper belongs to the internal dashboard, not the public landing page. */
+const AppChrome: FC = () => {
+  const { pathname } = useLocation();
+  if (pathname === '/') return null;
+  return <AIAssistantWidget />;
+};
+
 const App: FC = () => {
   return (
     <ThemeProvider defaultTheme="system" storageKey="Mattel-ui-theme">
@@ -99,7 +113,7 @@ const App: FC = () => {
           <BrowserRouter>
             <ScrollToTop />
             <AppRoutes />
-            <AIAssistantWidget />
+            <AppChrome />
             <Toaster />
           </BrowserRouter>
         </TooltipProvider>
