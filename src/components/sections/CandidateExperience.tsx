@@ -1,34 +1,35 @@
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
-import { candidateSteps } from "@/data/culture";
 import { Reveal } from "@/components/site/Reveal";
 import { SectionHeading } from "@/components/site/SectionHeading";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/hooks/useLanguage";
 
 export function CandidateExperience() {
+  const { t, copy } = useLanguage();
   return (
-    <section className="py-24 md:py-36">
-      <div className="container-editorial grid gap-12 md:grid-cols-12">
+    <section className="py-16 sm:py-24 md:py-36">
+      <div className="container-editorial grid gap-10 md:grid-cols-12 md:gap-12">
         <div className="md:col-span-4">
           <SectionHeading
-            eyebrow="Candidate experience"
-            title="Your application, all in one place."
-            lead="Sign in with your email to view open jobs, apply, and follow your application's progress — no password needed."
+            eyebrow={t("candidate.eyebrow")}
+            title={t("candidate.title")}
+            lead={t("candidate.lead")}
             size="md"
           />
           <Reveal delay={1} className="mt-8">
             <Button asChild variant="ink" size="lg">
               <Link to="/apply">
-                Candidate Portal <ArrowRight />
+                {t("candidate.cta")} <ArrowRight />
               </Link>
             </Button>
           </Reveal>
         </div>
 
         <ol className="grid gap-px bg-border md:col-span-8 sm:grid-cols-2 lg:grid-cols-3">
-          {candidateSteps.map((s, i) => {
+          {copy.candidate.steps.map((s, i) => {
             const isLastInRow = (i + 1) % 3 === 0;
-            const isLast = i === candidateSteps.length - 1;
+            const isLast = i === copy.candidate.steps.length - 1;
             return (
               <Reveal
                 as="li"

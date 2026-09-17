@@ -3,6 +3,7 @@ import { type FC } from 'react';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { ThemeProvider } from './components/ThemeProvider';
+import { LanguageProvider } from './contexts/LanguageContext';
 import { FocusModeProvider } from './contexts/FocusModeContext';
 import { ScrollToTop } from './components/ScrollToTop';
 import { Dashboard } from './pages/Dashboard';
@@ -119,6 +120,7 @@ const AppChrome: FC = () => {
 const App: FC = () => {
   return (
     <ThemeProvider defaultTheme="system" storageKey="mattel-ui-theme">
+      <LanguageProvider>
       <FocusModeProvider>
         <TooltipProvider>
           <BrowserRouter>
@@ -129,6 +131,7 @@ const App: FC = () => {
           </BrowserRouter>
         </TooltipProvider>
       </FocusModeProvider>
+      </LanguageProvider>
     </ThemeProvider>
   );
 };

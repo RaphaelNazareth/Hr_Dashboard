@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import heroImage from "@/assets/hero-studio.png";
 import heroImagePortrait from "@/assets/hero-studio-portrait.jpg";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/hooks/useLanguage";
 
 /** Upscale that gives the parallax room to travel without exposing an edge. */
 const HERO_SCALE = 1.15;
@@ -11,6 +12,7 @@ const HERO_SCALE = 1.15;
 /** PLACEHOLDER PHOTOGRAPHY: replace hero-studio*.jpg with approved imagery. */
 export function Hero() {
   const imgRef = useRef<HTMLImageElement>(null);
+  const { t } = useLanguage();
 
   useEffect(() => {
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -45,7 +47,7 @@ export function Hero() {
           width={1920}
           height={1152}
           fetchPriority="high"
-          className="absolute inset-0 -z-20 h-full w-full object-contain object-center"
+          className="absolute inset-0 -z-20 h-full w-full object-cover object-center"
         />
       </picture>
 
@@ -56,31 +58,29 @@ export function Hero() {
       {/* Slightly heavier top overlay so the nav sits on a consistent dark band regardless of what's behind it */}
       <div className="absolute inset-x-0 top-0 -z-10 h-48 bg-gradient-to-b from-ink/70 via-ink/35 to-transparent" />
 
-      <div className="container-editorial relative w-full pb-16 pt-40 md:pb-24">
-        <div className="grid gap-10 md:grid-cols-12 md:items-end">
+      <div className="container-editorial relative w-full pb-12 pt-28 sm:pb-16 sm:pt-36 md:pb-24 md:pt-40">
+        <div className="grid gap-8 md:grid-cols-12 md:items-end md:gap-10">
           <div className="md:col-span-8">
-            
             <h1 className="display-xl text-balance-pretty animate-in fade-in slide-in-from-bottom-4 duration-1000">
-              Empowering the
+              {t("hero.titleLine1")}
               <br />
-              next generation
+              {t("hero.titleLine2")}
               <br />
-              through play.
+              {t("hero.titleLine3")}
             </h1>
           </div>
           <div className="md:col-span-4 md:pb-3 animate-in fade-in slide-in-from-bottom-3 delay-200 duration-1000 fill-mode-both">
             <p className="max-w-sm text-base leading-relaxed text-ink-foreground/85 md:text-lg">
-              We empower generations to explore the wonder of childhood and reach their full
-              potential. Come help us do it.
+              {t("hero.lead")}
             </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Button
                 asChild
                 size="xl"
                 className="w-full bg-accent text-accent-foreground hover:bg-accent/90 sm:w-auto"
               >
                 <Link to="/#jobs">
-                  Explore Opportunities <ArrowRight />
+                  {t("hero.explore")} <ArrowRight />
                 </Link>
               </Button>
               <Button
@@ -89,17 +89,16 @@ export function Hero() {
                 size="xl"
                 className="w-full border-ink-foreground/60 bg-transparent text-ink-foreground hover:bg-ink-foreground/10 sm:w-auto"
               >
-                <Link to="/#life">Life at the Company</Link>
+                <Link to="/#life">{t("hero.life")}</Link>
               </Button>
             </div>
           </div>
         </div>
 
-        <div className="mt-24 flex items-center justify-between border-t border-ink-foreground/20 pt-6 text-xs text-ink-muted md:mt-28">
+        <div className="mt-16 flex items-center justify-between border-t border-ink-foreground/20 pt-6 text-xs text-ink-muted sm:mt-24 md:mt-28">
           <span className="inline-flex items-center gap-2">
-            <ArrowDown className="size-3.5 animate-bounce" /> Scroll to explore
+            <ArrowDown className="size-3.5 animate-bounce" /> {t("hero.scroll")}
           </span>
-         
         </div>
       </div>
     </section>

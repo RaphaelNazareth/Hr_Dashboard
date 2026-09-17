@@ -2,6 +2,7 @@ import { Loader2, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { JobCard } from "./JobCard";
 import { fetchJobs, type JobRecord } from "@/lib/candidateBoard";
+import { useLanguage } from "@/hooks/useLanguage";
 
 export interface JobFilters {
   q: string;
@@ -19,6 +20,7 @@ export function filterJobs(list: JobRecord[], f: JobFilters) {
 }
 
 export function JobSearch({ limit }: { limit?: number }) {
+  const { t } = useLanguage();
   const [allJobs, setAllJobs] = useState<JobRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export function JobSearch({ limit }: { limit?: number }) {
         if (!cancelled) setAllJobs(jobs.filter((j) => j.status === "Open"));
       } catch (err) {
         console.error("Failed to load jobs", err);
-        if (!cancelled) setError("Couldn't load open positions.");
+        if (!cancelled) setError(t("jobs.loadError"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -56,15 +58,15 @@ export function JobSearch({ limit }: { limit?: number }) {
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by title or description"
-            className="w-full bg-transparent font-display text-xl font-medium tracking-tight outline-none placeholder:text-muted-foreground/70 md:text-2xl"
-            aria-label="Search jobs"
+            placeholder={t("jobs.searchPlaceholder")}
+            className="w-full min-w-0 bg-transparent font-display text-xl font-medium tracking-tight outline-none placeholder:text-muted-foreground/70 md:text-2xl"
+            aria-label={t("jobs.searchAria")}
           />
           {q && (
             <button
               type="button"
               onClick={() => setQ("")}
-              aria-label="Clear search"
+              aria-label={t("jobs.clear")}
               className="text-muted-foreground hover:text-ink"
             >
               <X className="size-4" />
@@ -75,15 +77,17 @@ export function JobSearch({ limit }: { limit?: number }) {
 
       {loading ? (
         <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading positions…
+          <Loader2 className="size-4 animate-spin" /> {t("jobs.loading")}
         </div>
       ) : error ? (
         <p className="py-10 text-sm text-destructive">{error}</p>
       ) : (
         <>
           <p className="py-4 text-xs text-muted-foreground">
-            {results.length} open {results.length === 1 ? "position" : "positions"}
-            {limit && results.length > limit ? ` · showing ${limit}` : ""}
+            {results.length === 1
+              ? t("jobs.countOne", { count: results.length })
+              : t("jobs.countMany", { count: results.length })}
+            {limit && results.length > limit ? t("jobs.showing", { limit }) : ""}
           </p>
           <div>
             {shown.map((job) => (
@@ -91,9 +95,9 @@ export function JobSearch({ limit }: { limit?: number }) {
             ))}
             {shown.length === 0 && (
               <div className="py-16 text-center">
-                <p className="font-display text-2xl font-semibold">No positions match yet.</p>
+                <p className="font-display text-2xl font-semibold">{t("jobs.emptyTitle")}</p>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Try a broader search, or check back soon — new roles open every week.
+                  {t("jobs.emptyLead")}
                 </p>
               </div>
             )}

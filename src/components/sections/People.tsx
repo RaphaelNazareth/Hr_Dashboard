@@ -3,10 +3,12 @@ import { ArrowLeft, ArrowRight, Quote } from "lucide-react";
 
 import { people } from "@/data/people";
 import { Reveal } from "@/components/site/Reveal";
+import { useLanguage } from "@/hooks/useLanguage";
 
 export function People() {
   const [active, setActive] = useState(0);
   const [direction, setDirection] = useState<"next" | "prev">("next");
+  const { t, copy } = useLanguage();
 
   const current = people[active];
 
@@ -35,7 +37,7 @@ export function People() {
   return (
     <section
       id="people"
-      className="scroll-mt-20 overflow-hidden bg-[#f7f5f0] py-24 md:py-32"
+      className="scroll-mt-20 overflow-hidden bg-[#f7f5f0] py-16 sm:py-24 md:py-32"
     >
       <div className="container-editorial">
 
@@ -43,16 +45,15 @@ export function People() {
         <Reveal>
           <div className="max-w-3xl">
             <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-              People
+              {t("people.eyebrow")}
             </p>
 
-            <h2 className="font-display text-4xl font-medium tracking-tight md:text-6xl">
-              The people behind the play.
+            <h2 className="font-display text-3xl font-medium tracking-tight sm:text-4xl md:text-6xl">
+              {t("people.title")}
             </h2>
 
             <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">
-              Designers, engineers, makers and planners — the people who turn
-              purposeful play into something a child can hold.
+              {t("people.lead")}
             </p>
           </div>
         </Reveal>
@@ -62,7 +63,7 @@ export function People() {
           <div className="relative">
 
             {/* Desktop */}
-            <div className="relative hidden h-[620px] items-center justify-center md:flex">
+            <div className="relative hidden h-[520px] items-center justify-center overflow-hidden lg:h-[620px] md:flex">
 
               {/* Previous preview */}
               <button
@@ -138,7 +139,7 @@ export function People() {
                     />
 
                     <blockquote className="font-display text-2xl font-medium leading-[1.18] tracking-tight lg:text-[2.15rem]">
-                      “{current.quote}”
+                    “{copy.people.quotes[current.id as keyof typeof copy.people.quotes]}”
                     </blockquote>
                   </div>
 
@@ -191,7 +192,7 @@ export function People() {
                   />
 
                   <blockquote className="font-display text-2xl font-medium leading-tight tracking-tight">
-                    “{current.quote}”
+                  “{copy.people.quotes[current.id as keyof typeof copy.people.quotes]}”
                   </blockquote>
 
                   <div className="mt-8 border-t border-border pt-5">
@@ -245,7 +246,7 @@ export function People() {
                 <button
                   type="button"
                   onClick={previous}
-                  aria-label="Previous person"
+                  aria-label={t("people.previous")}
                   className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-white transition-all duration-200 hover:-translate-x-0.5 hover:bg-black hover:text-white"
                 >
                   <ArrowLeft
@@ -257,7 +258,7 @@ export function People() {
                 <button
                   type="button"
                   onClick={next}
-                  aria-label="Next person"
+                  aria-label={t("people.next")}
                   className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-white transition-all duration-200 hover:translate-x-0.5 hover:bg-black hover:text-white"
                 >
                   <ArrowRight

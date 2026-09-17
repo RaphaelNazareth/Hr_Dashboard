@@ -9,74 +9,41 @@ import picture8 from "@/assets/picture8.jpeg";
 import picture10 from "@/assets/picture10.jpeg";
 
 import { SiteNav } from "@/components/site/SiteNav";
+import { SiteFooter } from "@/components/site/SiteFooter";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, ArrowDown } from "lucide-react";
+import { useLanguage } from "@/hooks/useLanguage";
 
-const PRINCIPLES = [
-  {
-    number: "01",
-    title: "We collaborate.",
-    text: "Great ideas rarely happen alone. We work across disciplines, challenge each other, and build better things together.",
-    picture: picture3,
-  },
-  {
-    number: "02",
-    title: "We innovate.",
-    text: "We stay curious, question the expected, and turn new ideas into experiences people want to play with.",
-    picture: picture4,
-  },
-  {
-    number: "03",
-    title: "We execute.",
-    text: "Ideas matter when they become real. We take ownership, move with purpose, and hold ourselves to a high standard.",
-    picture: picture7,
-  },
-];
-
-const CULTURE = [
-  {
-    title: "Create boldly",
-    text: "Creativity is not a department. It's how we approach problems, products, and possibilities.",
-    picture: picture6,
-  },
-  {
-    title: "Bring your perspective",
-    text: "Different experiences create different ideas. We want people to show up as themselves and make their voice heard.",
-    picture: picture8,
-  },
-  {
-    title: "Keep growing",
-    text: "Your career should keep moving. We create room to learn, take on challenges, and grow into what's next.",
-    picture: picture5,
-  },
-];
+const CULTURE_IMAGES = [picture6, picture8, picture5];
 
 export default function LifeAtCompany() {
+  const { t, copy } = useLanguage();
+  const principles = copy.life.principles;
+  const culture = copy.life.culture;
+
   return (
-    <main className="min-h-screen bg-[#f5f3ee] text-[#171717]">
+    <div className="site-scope min-h-screen overflow-x-hidden bg-[#f5f3ee] text-[#171717]">
       <SiteNav />
 
       {/* HERO */}
-      <section className="relative overflow-hidden px-6 pb-16 pt-32 md:px-12 md:pb-24 md:pt-40">
+      <section className="relative overflow-hidden px-4 pb-12 pt-28 sm:px-6 sm:pb-16 sm:pt-32 md:px-12 md:pb-24 md:pt-40">
         <div className="mx-auto max-w-[1400px]">
           <div className="grid items-end gap-10 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <p className="mb-6 text-xs font-semibold uppercase tracking-[0.2em] text-[#e31b23]">
-                Life at playco
+                {t("life.eyebrow")}
               </p>
 
-              <h1 className="max-w-5xl text-5xl font-bold leading-[0.94] tracking-[-0.055em] md:text-7xl lg:text-[6.5rem]">
-                Make something
+              <h1 className="max-w-5xl text-[2.35rem] font-bold leading-[0.98] tracking-[-0.055em] sm:text-5xl md:text-7xl lg:text-[6.5rem]">
+                {t("life.titleLine1")}
                 <br />
-                worth playing with.
+                {t("life.titleLine2")}
               </h1>
             </div>
 
             <div className="lg:col-span-4 lg:pb-2">
               <p className="max-w-md text-lg leading-8 text-[#171717]/65">
-                We bring designers, creators, engineers, storytellers, and
-                problem-solvers together to create products and experiences
-                that inspire people through play.
+                {t("life.lead")}
               </p>
             </div>
           </div>
@@ -85,13 +52,13 @@ export default function LifeAtCompany() {
             <img
               src={picture1}
               alt="mattel creative team working together"
-              className="aspect-[16/8] w-full object-cover"
+              className="aspect-[16/10] w-full object-cover sm:aspect-[16/8]"
             />
           </div>
 
           <div className="mt-6 flex items-center justify-between border-b border-[#171717]/15 pb-6">
             <span className="text-sm text-[#171717]/50">
-              Creativity. Purpose. Play.
+              {t("life.strap")}
             </span>
 
             <ArrowDown className="size-5 text-[#171717]/50" />
@@ -103,12 +70,11 @@ export default function LifeAtCompany() {
       <section className="bg-[#e31b23] px-6 py-24 text-white md:px-12 md:py-36">
         <div className="mx-auto max-w-[1400px]">
           <p className="mb-8 text-xs font-semibold uppercase tracking-[0.2em] text-white/65">
-            Our purpose
+            {t("life.purposeEyebrow")}
           </p>
 
-          <h2 className="max-w-6xl text-4xl font-bold leading-[0.98] tracking-[-0.045em] md:text-6xl lg:text-7xl">
-            We create experiences that help generations discover the wonder
-            of play — and their own potential.
+          <h2 className="max-w-6xl text-3xl font-bold leading-[1.05] tracking-[-0.045em] sm:text-4xl md:text-6xl lg:text-7xl">
+            {t("life.purpose")}
           </h2>
         </div>
       </section>
@@ -119,28 +85,28 @@ export default function LifeAtCompany() {
           <div className="grid gap-12 lg:grid-cols-12">
             <div className="lg:col-span-5">
               <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-[#e31b23]">
-                How we work
+                {t("life.howEyebrow")}
               </p>
 
-              <h2 className="max-w-lg text-4xl font-bold leading-[1] tracking-[-0.04em] md:text-6xl">
-                One team.
+              <h2 className="max-w-lg text-3xl font-bold leading-[1.05] tracking-[-0.04em] sm:text-4xl md:text-6xl">
+                {t("life.howTitleLine1")}
                 <br />
-                Three ways forward.
+                {t("life.howTitleLine2")}
               </h2>
             </div>
 
             <div className="lg:col-span-7">
               <div className="divide-y divide-[#171717]/15">
-                {PRINCIPLES.map((item) => (
+                {principles.map((item) => (
                   <div
                     key={item.number}
-                    className="grid gap-6 py-8 md:grid-cols-[60px_1fr_1.2fr] md:items-start"
+                    className="grid gap-4 py-8 sm:gap-6 md:grid-cols-[60px_1fr_1.2fr] md:items-start"
                   >
                     <span className="text-sm text-[#171717]/40">
                       {item.number}
                     </span>
 
-                    <h3 className="text-2xl font-bold tracking-[-0.03em]">
+                    <h3 className="text-xl font-bold tracking-[-0.03em] sm:text-2xl">
                       {item.title}
                     </h3>
 
@@ -161,16 +127,15 @@ export default function LifeAtCompany() {
           <div className="grid items-center gap-12 lg:grid-cols-12 lg:gap-20">
             <div className="lg:col-span-5">
               <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-[#e31b23]">
-                Creativity is our starting point
+                {t("life.creativityEyebrow")}
               </p>
 
-              <h2 className="text-4xl font-bold leading-[0.98] tracking-[-0.045em] md:text-6xl">
-                The best ideas can come from anywhere.
+              <h2 className="text-3xl font-bold leading-[1.05] tracking-[-0.045em] sm:text-4xl md:text-6xl">
+                {t("life.creativityTitle")}
               </h2>
 
               <p className="mt-7 max-w-md text-lg leading-8 text-white/55">
-                We give people room to question, experiment, make mistakes,
-                and discover better ways forward.
+                {t("life.creativityLead")}
               </p>
             </div>
 
@@ -192,22 +157,22 @@ export default function LifeAtCompany() {
         <div className="mx-auto max-w-[1400px]">
           <div className="mb-14 max-w-3xl">
             <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-[#e31b23]">
-              Our culture
+              {t("life.cultureEyebrow")}
             </p>
 
-            <h2 className="text-4xl font-bold leading-[1] tracking-[-0.04em] md:text-6xl">
-              Bring your ideas.
+            <h2 className="text-3xl font-bold leading-[1.05] tracking-[-0.04em] sm:text-4xl md:text-6xl">
+              {t("life.cultureTitleLine1")}
               <br />
-              Bring yourself.
+              {t("life.cultureTitleLine2")}
             </h2>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-3">
-            {CULTURE.map((item) => (
+          <div className="grid gap-5 sm:grid-cols-2 md:grid-cols-3">
+            {culture.map((item, i) => (
               <article key={item.title}>
                 <div className="overflow-hidden rounded-[1.25rem]">
                   <img
-                    src={item.picture}
+                    src={CULTURE_IMAGES[i]}
                     alt={item.title}
                     className="aspect-[4/3] w-full object-cover transition-transform duration-700 hover:scale-[1.03]"
                   />
@@ -228,25 +193,23 @@ export default function LifeAtCompany() {
 
       {/* BELONGING */}
       <section className="grid bg-[#eae5d9] lg:grid-cols-2">
-        <div className="flex items-center px-6 py-24 md:px-12 md:py-32">
+        <div className="flex items-center px-4 py-16 sm:px-6 sm:py-24 md:px-12 md:py-32">
           <div className="max-w-xl">
             <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-[#e31b23]">
-              A place to belong
+              {t("life.belongEyebrow")}
             </p>
 
-            <h2 className="text-4xl font-bold leading-[0.98] tracking-[-0.04em] md:text-6xl">
-              Different voices make better things.
+            <h2 className="text-3xl font-bold leading-[1.05] tracking-[-0.04em] sm:text-4xl md:text-6xl">
+              {t("life.belongTitle")}
             </h2>
 
             <p className="mt-7 text-lg leading-8 text-[#171717]/60">
-              We want people to feel respected, included, and heard. Your
-              perspective changes the work — and that's exactly why it belongs
-              here.
+              {t("life.belongLead")}
             </p>
           </div>
         </div>
 
-        <div className="min-h-[500px]">
+        <div className="min-h-[280px] sm:min-h-[500px]">
           <img
             src={picture10}
             alt="mattel team collaborating in a creative studio"
@@ -310,6 +273,6 @@ export default function LifeAtCompany() {
           </Link>
         </div>
       </section>
-    </main>
+    </div>
   );
 }

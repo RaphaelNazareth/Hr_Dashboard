@@ -1,26 +1,44 @@
 import { Link } from "react-router-dom";
 import { Wordmark } from "./Wordmark";
-import { brand, footerLinks } from "@/data/site";
+import { brand } from "@/data/site";
+import { useLanguage } from "@/hooks/useLanguage";
 
 export function SiteFooter() {
+  const { t } = useLanguage();
+
+  const explore = [
+    { label: t("footer.careers"), to: "/" },
+    { label: t("footer.jobs"), to: "/#jobs" },
+    { label: t("footer.aboutUs"), to: "/#life" },
+    { label: t("footer.people"), to: "/#people" },
+    { label: t("footer.life"), to: "/life-at-company" },
+  ];
+  const portals = [
+    { label: t("footer.candidatePortal"), to: "/apply" },
+    { label: t("footer.hrDashboard"), to: "/dashboard" },
+  ];
+  const legal = [
+    { label: t("footer.privacy"), to: "/" },
+    { label: t("footer.terms"), to: "/" },
+  ];
+
   return (
     <footer className="bg-ink text-ink-foreground">
-      <div className="container-editorial grid gap-12 py-16 md:grid-cols-12 md:py-20">
+      <div className="container-editorial grid gap-10 py-12 sm:gap-12 sm:py-16 md:grid-cols-12 md:py-20">
         <div className="md:col-span-5">
           <Wordmark tone="paper" />
           <p className="mt-6 max-w-sm text-sm leading-relaxed text-ink-muted">
-            The careers home of {brand.legalName}. Built for the people who make play — and the
-            people who want to.
+            {t("footer.blurb", { name: brand.legalName })}
           </p>
         </div>
-        <FooterColumn title="Explore" links={footerLinks.explore} />
-        <FooterColumn title="Portals" links={footerLinks.portals} />
-        <FooterColumn title="Legal" links={footerLinks.legal} />
+        <FooterColumn title={t("footer.explore")} links={explore} />
+        <FooterColumn title={t("footer.portals")} links={portals} />
+        <FooterColumn title={t("footer.legal")} links={legal} />
       </div>
       <div className="border-t border-ink-border">
         <div className="container-editorial flex flex-col gap-2 py-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:justify-between">
-          <span>© {new Date().getFullYear()} {brand.legalName}. All rights reserved.</span>
-          <span>Careers site · Not the corporate store</span>
+          <span>{t("footer.rights", { year: new Date().getFullYear(), name: brand.legalName })}</span>
+          <span>{t("footer.note")}</span>
         </div>
       </div>
     </footer>
@@ -32,7 +50,7 @@ function FooterColumn({
   links,
 }: {
   title: string;
-  links: readonly { label: string; to: string }[];
+  links: { label: string; to: string }[];
 }) {
   return (
     <div className="md:col-span-2">

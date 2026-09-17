@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import type { JobRecord } from "@/lib/candidateBoard";
+import { useLanguage } from "@/hooks/useLanguage";
 
 export function JobCard({ job }: { job: JobRecord }) {
+  const { t } = useLanguage();
   return (
     <Link
       to={`/apply/${job.id}`}
@@ -20,7 +22,7 @@ export function JobCard({ job }: { job: JobRecord }) {
       </div>
       <div className="md:col-span-3 md:text-right">
         <span className="arrow-nudge inline-flex items-center gap-2 text-sm font-semibold text-ink group-hover:text-brand">
-          View Position <ArrowRight className="size-4" />
+          {t("jobs.viewPosition")} <ArrowRight className="size-4" />
         </span>
       </div>
     </Link>
