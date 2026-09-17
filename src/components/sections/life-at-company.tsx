@@ -263,7 +263,7 @@ export default function LifeAtCompany() {
             <div className="lg:col-span-6">
               <div className="overflow-hidden rounded-[1.5rem]">
                 <img
-                  src={picture9}
+                  src={picture5}
                   alt="mattel colleague learning from a teammate"
                   className="aspect-[4/3] w-full object-cover"
                 />

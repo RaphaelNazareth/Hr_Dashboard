@@ -1,6 +1,6 @@
 // src/components/sections/CandidatePortal.tsx
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Search, ChevronLeft, ChevronRight, LogOut, User, Briefcase, Clock, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { supabase } from "@/lib/candidateBoard";
 import { cn } from "@/lib/utils";
