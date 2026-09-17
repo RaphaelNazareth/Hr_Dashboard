@@ -1,6 +1,6 @@
-# Mattel - Modern Intranet Dashboard
+# playco - Modern Intranet Dashboard
 
-A comprehensive, modern intranet dashboard built with React, TypeScript, and Tailwind CSS. Mattel provides a centralized hub for team collaboration, employee engagement, and organizational information.
+A comprehensive, modern intranet dashboard built with React, TypeScript, and Tailwind CSS. playco  provides a centralized hub for team collaboration, employee engagement, and organizational information.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![React](https://img.shields.io/badge/React-19-blue.svg)](https://reactjs.org/)
@@ -69,7 +69,7 @@ This project is configured for deployment on **Vercel**.
 ## 📁 Project Structure
 
 ```
-Mattel/
+playco /
 ├── src/
 │   ├── components/           # Reusable UI components
 │   │   ├── ui/              # shadcn/ui base components
@@ -105,8 +105,8 @@ Mattel/
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/praveen-sripati/Mattel.git
-   cd Mattel
+   git clone https://github.com/praveen-sripati/playco .git
+   cd playco 
    ```
 
 2. **Install dependencies**
