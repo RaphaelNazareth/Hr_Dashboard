@@ -224,7 +224,7 @@ export const RecruitmentBoard: FC = () => {
   const [cityFilter, setCityFilter] = useState<string>("all");
   const [educationFilter, setEducationFilter] = useState<string>("all");
   const [noticePeriodFilter, setNoticePeriodFilter] = useState<string>("all");
-  const [mattelFilter, setMattelFilter] = useState<"all" | "yes" | "no">("all");
+  const [mattelFilter, setmattelFilter] = useState<"all" | "yes" | "no">("all");
   const [ageMin, setAgeMin] = useState("");
   const [ageMax, setAgeMax] = useState("");
 
@@ -300,7 +300,7 @@ export const RecruitmentBoard: FC = () => {
   }
 
   function openCandidateProfile(candidate: CandidateRecord) {
-    navigate(`/profiles?candidateId=${candidate.id}`);
+    navigate(`/profiles?candidateId=${encodeURIComponent(candidate.id)}`);
   }
 
   // -- Load data -------------------------------------------------------
@@ -400,7 +400,7 @@ export const RecruitmentBoard: FC = () => {
     setCityFilter("all");
     setEducationFilter("all");
     setNoticePeriodFilter("all");
-    setMattelFilter("all");
+    setmattelFilter("all");
     setAgeMin("");
     setAgeMax("");
   }
@@ -1066,11 +1066,11 @@ export const RecruitmentBoard: FC = () => {
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                    Mattel Employee
+                    mattel Employee
                   </label>
                   <select
                     value={mattelFilter}
-                    onChange={(e) => setMattelFilter(e.target.value as "all" | "yes" | "no")}
+                    onChange={(e) => setmattelFilter(e.target.value as "all" | "yes" | "no")}
                     className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
                   >
                     <option value="all">All</option>
@@ -1590,7 +1590,7 @@ const StageColumn: FC<StageColumnProps> = ({
       const matchesEducation = filters.education === "all" || c.education === filters.education;
       const matchesNotice =
         filters.noticePeriod === "all" || c.notice_period === filters.noticePeriod;
-      const matchesMattel =
+      const matchesmattel =
         filters.mattel === "all" ||
         (filters.mattel === "yes"
           ? !!c.former_current_mattel_employee
@@ -1606,7 +1606,7 @@ const StageColumn: FC<StageColumnProps> = ({
         matchesCity &&
         matchesEducation &&
         matchesNotice &&
-        matchesMattel &&
+        matchesmattel &&
         matchesAgeMin &&
         matchesAgeMax
       );

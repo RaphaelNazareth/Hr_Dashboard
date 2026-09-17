@@ -98,6 +98,8 @@ export function ProfilesPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [selected, setSelected] = useState<CandidateRecord | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>('about');
+  const [deepLinkError, setDeepLinkError] = useState<string | null>(null);
+  const [deepLinkLoading, setDeepLinkLoading] = useState(false);
 
   // Notes are modeled as append-only candidate_tracking entries
   // (stage = "Note") since the schema has no free-text notes column.
@@ -175,6 +177,23 @@ export function ProfilesPage() {
   // Deep link from Candidates: fetch the exact record by id, drop it into the
   // list (in case it isn't among the current search results), select it, and
   // seed the search box with their name so it's visible in context.
+  //
+  // NOTE on the loading-state bug: previously this effect gated
+  // `setDeepLinkLoading(false)` behind `if (!cancelled)`. Under React 18
+  // StrictMode (dev only), effects mount -> cleanup -> mount again. The
+  // `lastFetchedCandidateId` ref caused the *second* mount to bail out
+  // immediately (since the id hadn't actually changed), so nothing was left
+  // to reset the loading flag except the *first* mount's async callback —
+  // but by the time that resolved, its own `cancelled` had already been
+  // flipped to true by the StrictMode cleanup, so the `if (!cancelled)`
+  // check silently skipped the reset and the spinner never went away.
+  //
+  // Fix: always reset `deepLinkLoading` in `finally`, regardless of
+  // `cancelled`. We still gate the *data* writes (candidate list, selection,
+  // query, error) behind `cancelled` so a superseded request can't clobber
+  // state from a newer one — but the loading indicator itself should always
+  // reflect "this particular async call is done," not "...and it wasn't
+  // preempted."
   const lastFetchedCandidateId = useRef<string | null>(null);
   useEffect(() => {
     const candidateId = searchParams.get('candidateId');
@@ -182,6 +201,9 @@ export function ProfilesPage() {
     if (lastFetchedCandidateId.current === candidateId) return;
     lastFetchedCandidateId.current = candidateId;
     let cancelled = false;
+
+    setDeepLinkLoading(true);
+    setDeepLinkError(null);
 
     (async () => {
       try {
@@ -199,6 +221,11 @@ export function ProfilesPage() {
         setSearchParams(next, { replace: true });
       } catch (err) {
         console.error('Failed to load candidate from link', err);
+        if (!cancelled) setDeepLinkError("Couldn't load that candidate — please search manually.");
+      } finally {
+        // Always clear the spinner for THIS call, even if it was
+        // superseded/cancelled — see note above.
+        setDeepLinkLoading(false);
       }
     })();
 
@@ -254,6 +281,11 @@ export function ProfilesPage() {
           {/* Left: search + list */}
           <Card className="flex h-[calc(100vh-14rem)] flex-col overflow-hidden">
             <div className="border-b p-4">
+              {deepLinkError && (
+                <div className="mb-3 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                  {deepLinkError}
+                </div>
+              )}
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -319,7 +351,13 @@ export function ProfilesPage() {
 
           {/* Right: candidate detail */}
           <Card className="h-[calc(100vh-14rem)] overflow-y-auto">
-            {!selected && (
+            {!selected && deepLinkLoading && (
+              <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
+                <Loader2 className="mb-3 h-10 w-10 animate-spin" />
+                <p className="text-sm">Loading candidate profile...</p>
+              </div>
+            )}
+            {!selected && !deepLinkLoading && (
               <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
                 <UserIcon className="mb-3 h-10 w-10" />
                 <p className="text-sm">Select a candidate to view their profile</p>

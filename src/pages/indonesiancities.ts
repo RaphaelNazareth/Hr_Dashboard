@@ -115,7 +115,6 @@ export const INDONESIAN_CITIES: string[] = [
   "Lamongan",
   "Gresik",
   "Sidoarjo",
-  "Mojokerto",
   "Ngawi",
   "Magetan",
   "Ponorogo",

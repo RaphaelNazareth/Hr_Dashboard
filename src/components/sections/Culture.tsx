@@ -42,7 +42,7 @@ export function Culture() {
             <Reveal
               as="li"
               key={c.theme}
-              delay={(i % 4) as 0 | 1 | 2 | 3}
+              delay={Math.min(i, 3) as 0 | 1 | 2 | 3}
               className="border-t border-ink py-6"
             >
               <p className="eyebrow">{c.theme}</p>

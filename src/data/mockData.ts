@@ -1,4 +1,4 @@
-// Mock data for Mattel intranet dashboard
+// Mock data for mattel intranet dashboard
 // Simulates API responses as specified in PRD
 
 export interface User {
@@ -128,7 +128,7 @@ export interface QuickLink {
 // Current user data
 export const currentUser: User = {
   id: '1',
-  name: 'raphael',
+  name: '',
   role: 'Frontend Developer',
   department: 'Engineering',
   avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Carlos'

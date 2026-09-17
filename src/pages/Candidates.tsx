@@ -106,7 +106,7 @@ export const Candidates: FC = () => {
   const [educationFilter, setEducationFilter] = useState<string>('all');
   const [ageMin, setAgeMin] = useState<string>('');
   const [ageMax, setAgeMax] = useState<string>('');
-  const [mattelFilter, setMattelFilter] = useState<TriState>('all');
+  const [mattelFilter, setmattelFilter] = useState<TriState>('all');
   const [noticePeriodFilter, setNoticePeriodFilter] = useState<string>('all');
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -137,7 +137,7 @@ export const Candidates: FC = () => {
     if (educationParam) setEducationFilter(educationParam);
     if (ageMinParam) setAgeMin(ageMinParam);
     if (ageMaxParam) setAgeMax(ageMaxParam);
-    if (mattelParam) setMattelFilter(mattelParam);
+    if (mattelParam) setmattelFilter(mattelParam);
     if (searchParam) setSearch(searchParam);
     if (noticePeriodParam) setNoticePeriodFilter(noticePeriodParam);
 
@@ -223,7 +223,7 @@ export const Candidates: FC = () => {
       const matchesAgeMin = minAge === null || (age !== null && age >= minAge);
       const matchesAgeMax = maxAge === null || (age !== null && age <= maxAge);
 
-      const matchesMattel = matchesTriState(!!r.former_current_mattel_employee, mattelFilter);
+      const matchesmattel = matchesTriState(!!r.former_current_mattel_employee, mattelFilter);
 
       return (
         matchesSearch &&
@@ -234,7 +234,7 @@ export const Candidates: FC = () => {
         matchesNoticePeriod &&
         matchesAgeMin &&
         matchesAgeMax &&
-        matchesMattel
+        matchesmattel
       );
     });
 
@@ -365,7 +365,7 @@ export const Candidates: FC = () => {
       setAgeMin('');
       setAgeMax('');
     }
-    if (key === 'mattel') setMattelFilter('all');
+    if (key === 'mattel') setmattelFilter('all');
     if (key === 'search') setSearch('');
     if (key === 'noticePeriod') setNoticePeriodFilter('all');
   };
@@ -379,7 +379,7 @@ export const Candidates: FC = () => {
     setEducationFilter('all');
     setAgeMin('');
     setAgeMax('');
-    setMattelFilter('all');
+    setmattelFilter('all');
     setNoticePeriodFilter('all');
   };
 
@@ -394,7 +394,7 @@ export const Candidates: FC = () => {
     educationFilter !== 'all' ? { key: 'education' as const, label: `Education: ${educationFilter}` } : null,
     noticePeriodFilter !== 'all' ? { key: 'noticePeriod' as const, label: `Notice Period: ${noticePeriodFilter}` } : null,
     ageMin || ageMax ? { key: 'age' as const, label: `Age: ${ageLabel}` } : null,
-    mattelFilter !== 'all' ? { key: 'mattel' as const, label: `Mattel Employee: ${mattelLabel}` } : null,
+    mattelFilter !== 'all' ? { key: 'mattel' as const, label: `mattel Employee: ${mattelLabel}` } : null,
   ].filter(Boolean) as { key: FilterKey; label: string }[];
 
   // Clicking a row opens that candidate's profile on the Profiles page,
@@ -629,10 +629,10 @@ export const Candidates: FC = () => {
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Mattel Employee</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">mattel Employee</label>
               <select
                 value={mattelFilter}
-                onChange={(e) => setMattelFilter(e.target.value as TriState)}
+                onChange={(e) => setmattelFilter(e.target.value as TriState)}
                 className="w-full rounded-md border bg-background px-3 py-1.5 text-sm"
               >
                 <option value="all">All</option>
@@ -675,7 +675,7 @@ export const Candidates: FC = () => {
                     Right to Work
                   </th>
                   <th className="whitespace-nowrap px-3 py-2 text-center text-xs font-medium text-muted-foreground">
-                    Ex/Current Mattel
+                    Ex/Current mattel
                   </th>
                   <SortHeader label="Applied On" sortKeyName="applied_at" />
                 </tr>
