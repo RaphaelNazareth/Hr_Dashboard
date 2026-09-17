@@ -6,7 +6,6 @@ import picture5 from "@/assets/picture5.jpeg";
 import picture6 from "@/assets/picture6.jpeg";
 import picture7 from "@/assets/picture7.jpeg";
 import picture8 from "@/assets/picture8.jpeg";
-import picture9 from "@/assets/picture9.jpeg";
 import picture10 from "@/assets/picture10.jpeg";
 
 import { SiteNav } from "@/components/site/SiteNav";
@@ -48,7 +47,7 @@ const CULTURE = [
   {
     title: "Keep growing",
     text: "Your career should keep moving. We create room to learn, take on challenges, and grow into what's next.",
-    picture: picture9,
+    picture: picture5,
   },
 ];
 
