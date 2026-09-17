@@ -1,7 +1,5 @@
 import picture1 from "@/assets/picture1.jpeg";
 import picture2 from "@/assets/picture2.jpeg";
-import picture3 from "@/assets/picture3.jpeg";
-import picture4 from "@/assets/picture4.jpeg";
 import picture5 from "@/assets/picture5.jpeg";
 import picture6 from "@/assets/picture6.jpeg";
 import picture7 from "@/assets/picture7.jpeg";
@@ -9,12 +7,11 @@ import picture8 from "@/assets/picture8.jpeg";
 import picture10 from "@/assets/picture10.jpeg";
 
 import { SiteNav } from "@/components/site/SiteNav";
-import { SiteFooter } from "@/components/site/SiteFooter";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, ArrowDown } from "lucide-react";
 import { useLanguage } from "@/hooks/useLanguage";
 
-const CULTURE_IMAGES = [picture6, picture8, picture5];
+const CULTURE_IMAGES = [picture6, picture8, picture7];
 
 export default function LifeAtCompany() {
   const { t, copy } = useLanguage();
