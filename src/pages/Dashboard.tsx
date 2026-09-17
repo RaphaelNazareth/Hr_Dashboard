@@ -355,7 +355,7 @@ const StatsOverview: FC<{
     <StatCard
       label="Former / Current Employees"
       value={String(formerEmployeeCount)}
-      hint="Mattel affiliation flagged"
+      hint="mattel affiliation flagged"
       loading={loading}
     />
   </div>

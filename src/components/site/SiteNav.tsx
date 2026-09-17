@@ -54,9 +54,7 @@ export function SiteNav({ transparent = false }: { transparent?: boolean }) {
         </nav>
 
         <div className="hidden items-center gap-2 lg:flex">
-          <Button asChild variant="ghost" size="sm" className={cn(!solid && "text-ink-foreground hover:bg-ink-foreground/10 hover:text-ink-foreground")}>
-            <Link to="/apply">Apply</Link>
-          </Button>
+          
           <Button asChild variant="ghost" size="sm" className={cn(!solid && "text-ink-foreground hover:bg-ink-foreground/10 hover:text-ink-foreground")}>
             <Link to="/candidate-portal">Candidate Login</Link>
           </Button>

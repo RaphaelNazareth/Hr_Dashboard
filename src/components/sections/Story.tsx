@@ -21,7 +21,7 @@ export function Story() {
             </h2>
 
             <p className="mt-8 max-w-md text-lg leading-relaxed text-muted-foreground">
-              At PLAYCO, we work together to create products and experiences
+              At playco, we work together to create products and experiences
               that bring joy to people around the world.
             </p>
 
@@ -32,7 +32,7 @@ export function Story() {
 
             <p className="mt-4 max-w-md text-lg leading-relaxed text-muted-foreground">
               We want our people to have the chance to learn, grow, and try
-              new things. When our people grow, PLAYCO grows with them.
+              new things. When our people grow, mattel grows with them.
             </p>
 
             {/* Button */}
@@ -40,7 +40,7 @@ export function Story() {
               to="/life-at-company"
               className="mt-8 inline-flex items-center gap-2 rounded-full bg-red-600 px-6 py-3 text-sm font-semibold text-white transition-all duration-300 hover:bg-red-700 hover:gap-3"
             >
-              Explore Life at PLAYCO
+              Explore Life at mattel
               <ArrowUpRight size={17} strokeWidth={2} />
             </Link>
           </Reveal>
@@ -56,7 +56,7 @@ export function Story() {
             >
               <img
                 src={heroImage}
-                alt="People working together at PLAYCO"
+                alt="People working together at mattel"
                 width={1024}
                 height={765}
                 loading="lazy"

@@ -81,7 +81,7 @@ export const storage = {
 
   // Check if user has been onboarded
   isOnboarded: (): boolean => {
-    return localStorage.getItem('Mattel-onboarded') === 'true';
+    return localStorage.getItem('playco-onboarded') === 'true';
   },
   
   // Mark user as onboarded
@@ -91,23 +91,23 @@ export const storage = {
   
   // Get user's quick links
   getQuickLinks: () => {
-    const links = localStorage.getItem('Mattel-quick-links');
+    const links = localStorage.getItem('playco-quick-links');
     return links ? JSON.parse(links) : [];
   },
   
   // Save user's quick links
   setQuickLinks: (links: unknown[]) => {
-    localStorage.setItem('Mattel-quick-links', JSON.stringify(links));
+    localStorage.setItem('playco-quick-links', JSON.stringify(links));
   },
   
   // Get focus mode state
   getFocusMode: (): boolean => {
-    return localStorage.getItem('Mattel-focus-mode') === 'true';
+    return localStorage.getItem('playco-focus-mode') === 'true';
   },
   
   // Set focus mode state
   setFocusMode: (enabled: boolean): void => {
-    localStorage.setItem('Mattel-focus-mode', enabled.toString());
+    localStorage.setItem('playco-focus-mode', enabled.toString());
   }
 };
 

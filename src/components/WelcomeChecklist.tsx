@@ -92,7 +92,7 @@ export const WelcomeChecklist: FC<WelcomeChecklistProps> = ({ onDismiss }) => {
         <div>
           <CardTitle className="text-lg flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
-            Welcome to Mattel! 🎉
+            Welcome to playco! 🎉
           </CardTitle>
           <CardDescription>
             Get started with these quick tasks ({completedCount}/{totalCount} completed)

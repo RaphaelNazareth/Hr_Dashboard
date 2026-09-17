@@ -189,7 +189,7 @@ interface ApplicationForm {
   Notice_Period: string;
   Is_18_Plus: boolean;
   Legal_Right_To_Work: boolean;
-  Former_Current_Mattel_Employee: boolean;
+  Former_Current_mattel_Employee: boolean;
   Consent_Data_Collection: boolean;
   Consent_Data_Usage: boolean;
   Consent_Data_Retention: boolean;
@@ -285,7 +285,7 @@ interface ApplicationForm {
   Previous_Application_Date: string;
   Previous_Position_Applied: string;
   Objection_To_Reference_Check: string; // "Yes" | "No"
-  Acquaintance_At_Mattel: string; // "Yes" | "No"
+  Acquaintance_At_mattel: string; // "Yes" | "No"
   Acquaintance_Name: string;
   Acquaintance_Relationship: string;
 
@@ -310,7 +310,7 @@ function emptyForm(): ApplicationForm {
     Notice_Period: "",
     Is_18_Plus: false,
     Legal_Right_To_Work: false,
-    Former_Current_Mattel_Employee: false,
+    Former_Current_mattel_Employee: false,
     Consent_Data_Collection: false,
     Consent_Data_Usage: false,
     Consent_Data_Retention: false,
@@ -398,7 +398,7 @@ function emptyForm(): ApplicationForm {
     Previous_Application_Date: "",
     Previous_Position_Applied: "",
     Objection_To_Reference_Check: "",
-    Acquaintance_At_Mattel: "",
+    Acquaintance_At_mattel: "",
     Acquaintance_Name: "",
     Acquaintance_Relationship: "",
 
@@ -830,9 +830,9 @@ export const ApplyPage: FC = () => {
           // than a bare "?? prev" fallback, so a manual correction (e.g. the
           // CV misread this and the person unticks it) sticks instead of
           // getting reset by a later re-upload of the same file.
-          Former_Current_Mattel_Employee: applyAutoFilled(
+          Former_Current_mattel_Employee: applyAutoFilled(
             prev,
-            "Former_Current_Mattel_Employee",
+            "Former_Current_mattel_Employee",
             data.ex_mattel_employee ?? null
           ),
           // Auto-tick "18 or older" when the CV gives us an age that
@@ -1083,7 +1083,7 @@ export const ApplyPage: FC = () => {
       status: "Applied",
       is_18_plus: form.Is_18_Plus,
       legal_right_to_work: form.Legal_Right_To_Work,
-      former_current_mattel_employee: form.Former_Current_Mattel_Employee,
+      former_current_mattel_employee: form.Former_Current_mattel_Employee,
       consent_data_collection: form.Consent_Data_Collection,
       consent_data_usage: form.Consent_Data_Usage,
       consent_data_retention: form.Consent_Data_Retention,
@@ -1211,11 +1211,11 @@ export const ApplyPage: FC = () => {
       previous_position_applied:
         form.Previously_Applied === "Yes" ? form.Previous_Position_Applied.trim() || null : null,
       objection_to_reference_check: (form.Objection_To_Reference_Check as YesNo) || null,
-      acquaintance_at_mattel: (form.Acquaintance_At_Mattel as YesNo) || null,
+      acquaintance_at_mattel: (form.Acquaintance_At_mattel as YesNo) || null,
       acquaintance_name:
-        form.Acquaintance_At_Mattel === "Yes" ? form.Acquaintance_Name.trim() || null : null,
+        form.Acquaintance_At_mattel === "Yes" ? form.Acquaintance_Name.trim() || null : null,
       acquaintance_relationship:
-        form.Acquaintance_At_Mattel === "Yes" ? form.Acquaintance_Relationship || null : null,
+        form.Acquaintance_At_mattel === "Yes" ? form.Acquaintance_Relationship || null : null,
     };
 
     const offerDetails: CandidateOfferDetailsInput = {
@@ -1361,12 +1361,12 @@ export const ApplyPage: FC = () => {
                   <div>
                     <p className="text-sm">
                       1. I have read and understood the statement above, and I consent to PT
-                      Mattel Indonesia collecting, using, storing, verifying, and processing my
+                      mattel Indonesia collecting, using, storing, verifying, and processing my
                       personal data for recruitment purposes.
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Saya telah membaca dan memahami pernyataan di atas, dan saya menyetujui PT
-                      Mattel Indonesia untuk mengumpulkan, menggunakan, menyimpan, memverifikasi,
+                      mattel Indonesia untuk mengumpulkan, menggunakan, menyimpan, memverifikasi,
                       dan memproses data pribadi saya untuk keperluan rekrutmen.
                     </p>
                     <CheckboxField
@@ -1619,6 +1619,7 @@ export const ApplyPage: FC = () => {
                     placeholder="e.g. Menteng"
                   />
                 </Field>
+
                 <Field label="Kecamatan (Sub-District)" htmlFor="Kecamatan" hint="pick a suggestion to auto-fill the rest">
                   <PostalSuggestionField
                     id="Kecamatan"
@@ -1629,7 +1630,16 @@ export const ApplyPage: FC = () => {
                   />
                 </Field>
                 <Field label="Kota / Kabupaten (City / Regency)" htmlFor="Kota_Kabupaten" required hint="auto-filled when possible">
-                  <SelectField id="Kota_Kabupaten" value={form.Kota_Kabupaten} onChange={(v) => updateField("Kota_Kabupaten", v)} options={INDONESIAN_CITIES} placeholder="Select a city…" />
+                  <SelectField
+                    id="Kota_Kabupaten"
+                    value={form.Kota_Kabupaten}
+                    onChange={(v) => {
+                      updateField("Kota_Kabupaten", v);
+                      updateField("City", v);
+                    }}
+                    options={INDONESIAN_CITIES}
+                    placeholder="Select a city…"
+                  />
                 </Field>
                 <Field label="Provinsi (Province)" htmlFor="Provinsi" hint="pick a suggestion to auto-fill the rest">
                   <PostalSuggestionField
@@ -2010,10 +2020,10 @@ export const ApplyPage: FC = () => {
                 <Field label="Any objection if we contact your previous employer for reference checking?" htmlFor="Objection_To_Reference_Check">
                   <SelectField id="Objection_To_Reference_Check" value={form.Objection_To_Reference_Check} onChange={(v) => updateField("Objection_To_Reference_Check", v)} options={YES_NO} />
                 </Field>
-                <Field label="Do you have any acquaintance working at Mattel?" htmlFor="Acquaintance_At_Mattel">
-                  <SelectField id="Acquaintance_At_Mattel" value={form.Acquaintance_At_Mattel} onChange={(v) => updateField("Acquaintance_At_Mattel", v)} options={YES_NO} />
+                <Field label="Do you have any acquaintance working at mattel?" htmlFor="Acquaintance_At_mattel">
+                  <SelectField id="Acquaintance_At_mattel" value={form.Acquaintance_At_mattel} onChange={(v) => updateField("Acquaintance_At_mattel", v)} options={YES_NO} />
                 </Field>
-                {form.Acquaintance_At_Mattel === "Yes" && (
+                {form.Acquaintance_At_mattel === "Yes" && (
                   <>
                     <Field label="Please mention your acquaintance's / relative's name" htmlFor="Acquaintance_Name">
                       <Input id="Acquaintance_Name" value={form.Acquaintance_Name} onChange={(e) => updateField("Acquaintance_Name", e.target.value)} />
@@ -2052,7 +2062,7 @@ export const ApplyPage: FC = () => {
               <div className="space-y-2 rounded-lg border bg-muted/20 p-4">
                 <CheckboxField id="Is_18_Plus" label="Saya berusia 18 tahun ke atas (I am 18 years or older) *" checked={form.Is_18_Plus} onChange={(v) => updateField("Is_18_Plus", v)} />
                 <CheckboxField id="Legal_Right_To_Work" label="Saya memiliki hak izin kerja yang sah (I have legal right to work) *" checked={form.Legal_Right_To_Work} onChange={(v) => updateField("Legal_Right_To_Work", v)} />
-                <CheckboxField id="Former_Current_Mattel_Employee" label="Saya pernah/sedang menjadi karyawan Mattel (Former/current Mattel employee)" checked={form.Former_Current_Mattel_Employee} onChange={(v) => updateField("Former_Current_Mattel_Employee", v)} />
+                <CheckboxField id="Former_Current_mattel_Employee" label="Saya pernah/sedang menjadi karyawan mattel (Former/current mattel employee)" checked={form.Former_Current_mattel_Employee} onChange={(v) => updateField("Former_Current_mattel_Employee", v)} />
               </div>
 
               <Button type="submit" className="w-full gap-2" disabled={submitting}>

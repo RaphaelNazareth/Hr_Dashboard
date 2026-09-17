@@ -111,13 +111,14 @@ const AppRoutes: FC = () => {
 /** The AI helper belongs to the internal dashboard, not the public landing page. */
 const AppChrome: FC = () => {
   const { pathname } = useLocation();
-  if (pathname === '/') return null;
+  // Hide on root AND candidate-portal pages
+  if (pathname === '/' || pathname === '/candidate-portal' || pathname === '/life-at-company' || pathname.startsWith('/apply')) return null;
   return <AIAssistantWidget />;
 };
 
 const App: FC = () => {
   return (
-    <ThemeProvider defaultTheme="system" storageKey="Mattel-ui-theme">
+    <ThemeProvider defaultTheme="system" storageKey="mattel-ui-theme">
       <FocusModeProvider>
         <TooltipProvider>
           <BrowserRouter>

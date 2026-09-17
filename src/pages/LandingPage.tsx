@@ -4,7 +4,7 @@ import { SiteLayout } from "@/components/site/SiteLayout";
 import { Hero } from "@/components/sections/Hero";
 import { Story } from "@/components/sections/Story";
 import { Journey } from "@/components/sections/Journey";
-import { People } from "@/components/sections/People";
+import { People } from "@/components/sections/people";
 // import { DayInTheLife } from "@/components/sections/DayInTheLife";
 import { Culture } from "@/components/sections/Culture";
 import { OpenJobs } from "@/components/sections/OpenJobs";

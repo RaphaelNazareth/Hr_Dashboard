@@ -42,9 +42,9 @@ export const Header: FC = () => {
           <div className="flex items-center gap-6">
             <Link to="/dashboard" className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
-                <img src="/Mattel.svg" alt="Mattel" className="h-6 w-6" />
+                <img src="/mattel.svg" alt="playco" className="h-6 w-6" />
               </div>
-              <span className="font-semibold text-lg">Mattel</span>
+              <span className="font-semibold text-lg">playco</span>
             </Link>
             <div className="hidden sm:block">
               <span className="text-lg font-medium text-muted-foreground">

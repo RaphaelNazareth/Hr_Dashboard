@@ -15,9 +15,31 @@ export const cultureThemes: CultureTheme[] = [
   { theme: "Purposeful play", statement: "We speak to people authentically — in play." },
 ];
 
+// src/data/culture.ts (or wherever candidateSteps lives)
+
 export const candidateSteps = [
-  { title: "Explore a role", text: "Browse open positions across teams, brands and locations." },
-  { title: "Apply", text: "Sign in with your email — no password to remember." },
-  { title: "Track your application", text: "See exactly where you are in the process." },
-  { title: "Stay updated", text: "Get notified when there is news from the team." },
+  {
+    title: "Submit Documents",
+    text: "Send your application via email to ptmiecop@mattel.com.",
+  },
+  {
+    title: "Complete Application",
+    text: "Fill out the online job application form with your details.",
+  },
+  {
+    title: "Test Invitation",
+    text: "Shortlisted candidates will be contacted via WhatsApp for test scheduling.",
+  },
+  {
+    title: "Document Screening",
+    text: "Your documents will be reviewed and verified on the day of the test.",
+  },
+  {
+    title: "Psychotest & Interview",
+    text: "Complete the psychological assessment and interview stage.",
+  },
+  {
+    title: "Offer",
+    text: "If successful, you will receive an offer letter.",
+  },
 ];

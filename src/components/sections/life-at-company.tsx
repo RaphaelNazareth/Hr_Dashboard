@@ -63,7 +63,7 @@ export default function LifeAtCompany() {
           <div className="grid items-end gap-10 lg:grid-cols-12">
             <div className="lg:col-span-7">
               <p className="mb-6 text-xs font-semibold uppercase tracking-[0.2em] text-[#e31b23]">
-                Life at PLAYCO
+                Life at playco
               </p>
 
               <h1 className="max-w-5xl text-5xl font-bold leading-[0.94] tracking-[-0.055em] md:text-7xl lg:text-[6.5rem]">
@@ -85,7 +85,7 @@ export default function LifeAtCompany() {
           <div className="mt-14 overflow-hidden rounded-[1.5rem] md:mt-20">
             <img
               src={picture1}
-              alt="PLAYCO creative team working together"
+              alt="mattel creative team working together"
               className="aspect-[16/8] w-full object-cover"
             />
           </div>
@@ -179,7 +179,7 @@ export default function LifeAtCompany() {
               <div className="overflow-hidden rounded-[1.5rem]">
                 <img
                   src={picture2}
-                  alt="PLAYCO designer creating a toy prototype"
+                  alt="mattel designer creating a toy prototype"
                   className="aspect-[4/3] w-full object-cover"
                 />
               </div>
@@ -250,7 +250,7 @@ export default function LifeAtCompany() {
         <div className="min-h-[500px]">
           <img
             src={picture10}
-            alt="PLAYCO team collaborating in a creative studio"
+            alt="mattel team collaborating in a creative studio"
             className="h-full w-full object-cover"
           />
         </div>
@@ -264,7 +264,7 @@ export default function LifeAtCompany() {
               <div className="overflow-hidden rounded-[1.5rem]">
                 <img
                   src={picture9}
-                  alt="PLAYCO colleague learning from a teammate"
+                  alt="mattel colleague learning from a teammate"
                   className="aspect-[4/3] w-full object-cover"
                 />
               </div>

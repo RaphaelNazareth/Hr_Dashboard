@@ -263,12 +263,6 @@ export const JobsPage: FC = () => {
                       </Button>
                     </Link>
 
-                    <Link to={`/pipeline?position=${encodeURIComponent(job.job_title)}`}>
-                      <Button size="sm" variant="ghost" className="gap-1.5">
-                        <Users className="h-3.5 w-3.5" /> Applicants
-                      </Button>
-                    </Link>
-
                     <Button
                       size="sm"
                       variant="ghost"

@@ -25,26 +25,30 @@ export function CandidateExperience() {
           </Reveal>
         </div>
 
-        <ol className="grid gap-px bg-border md:col-span-8 md:grid-cols-4">
-          {candidateSteps.map((s, i) => (
-            <Reveal
-              as="li"
-              key={s.title}
-              delay={(i % 4) as 0 | 1 | 2 | 3}
-              className="relative flex flex-col bg-background p-6 md:min-h-[16rem]"
-            >
-              <span className="font-display text-sm font-semibold tracking-[0.2em] text-brand">
-                0{i + 1}
-              </span>
-              <h3 className="mt-auto pt-10 font-display text-xl font-semibold tracking-tight">
-                {s.title}
-              </h3>
-              <p className="mt-2 text-sm text-muted-foreground">{s.text}</p>
-              {i < candidateSteps.length - 1 && (
-                <ArrowRight className="absolute right-4 top-6 hidden size-4 text-muted-foreground md:block" />
-              )}
-            </Reveal>
-          ))}
+        <ol className="grid gap-px bg-border md:col-span-8 sm:grid-cols-2 lg:grid-cols-3">
+          {candidateSteps.map((s, i) => {
+            const isLastInRow = (i + 1) % 3 === 0;
+            const isLast = i === candidateSteps.length - 1;
+            return (
+              <Reveal
+                as="li"
+                key={s.title}
+                delay={Math.min(i, 3) as 0 | 1 | 2 | 3}
+                className="relative flex flex-col bg-background p-6 md:min-h-[16rem]"
+              >
+                <span className="font-display text-sm font-semibold tracking-[0.2em] text-brand">
+                  0{i + 1}
+                </span>
+                <h3 className="mt-auto pt-10 font-display text-xl font-semibold tracking-tight">
+                  {s.title}
+                </h3>
+                <p className="mt-2 text-sm text-muted-foreground">{s.text}</p>
+                {!isLast && !isLastInRow && (
+                  <ArrowRight className="absolute right-4 top-6 hidden size-4 text-muted-foreground md:block" />
+                )}
+              </Reveal>
+            );
+          })}
         </ol>
       </div>
     </section>

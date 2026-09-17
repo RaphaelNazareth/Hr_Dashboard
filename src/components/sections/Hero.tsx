@@ -99,7 +99,7 @@ export function Hero() {
           <span className="inline-flex items-center gap-2">
             <ArrowDown className="size-3.5 animate-bounce" /> Scroll to explore
           </span>
-          <span className="hidden sm:inline">Photo: placeholder — replace with approved photography</span>
+         
         </div>
       </div>
     </section>

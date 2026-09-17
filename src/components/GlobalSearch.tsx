@@ -55,7 +55,7 @@ export const GlobalSearch: FC = () => {
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogContent className="sm:max-w-2xl p-0 overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-0">
-            <DialogTitle>Search Mattel</DialogTitle>
+            <DialogTitle>Search mattel</DialogTitle>
           </DialogHeader>
 
           <div className="flex flex-col">
