@@ -109,6 +109,11 @@ export interface TrackingRecord {
   moved_at: string;
   notes: string | null;
   created_at: string;
+  // Snapshot of the job title the candidate applied for at the time this
+  // stage entry was written. Lives on candidate_tracking (not just on
+  // candidates) so the history stays accurate even if the candidate later
+  // applies to something else or the job's title changes.
+  Position_Applied: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +284,7 @@ export async function fetchRecentActivity(
   const { data, error, count } = await supabase
     .from(TRACKING_TABLE)
     .select(
-      "id, candidate_id, stage, moved_at, notes, created_at, candidate:candidates(id, first_name, last_name, applied_position)",
+      "id, candidate_id, stage, moved_at, notes, created_at, Position_Applied, candidate:candidates(id, first_name, last_name, applied_position)",
       { count: "exact" }
     )
     .order("moved_at", { ascending: false })
@@ -337,6 +342,10 @@ interface LogTrackingEventArgs {
   stage: string;
   date?: string;
   notes?: string;
+  // The job title this stage entry belongs to. Optional because most
+  // existing call sites (board drag-drop, notes) aren't necessarily tied to
+  // a specific application; submitApplication() passes it explicitly.
+  positionApplied?: string | null;
 }
 
 export async function logTrackingEvent({
@@ -344,6 +353,7 @@ export async function logTrackingEvent({
   stage,
   date,
   notes,
+  positionApplied,
 }: LogTrackingEventArgs): Promise<TrackingRecord> {
   const { data, error } = await supabase
     .from(TRACKING_TABLE)
@@ -352,6 +362,7 @@ export async function logTrackingEvent({
       stage,
       moved_at: date ?? new Date().toISOString(),
       notes: notes ?? null,
+      Position_Applied: positionApplied ?? null,
     })
     .select()
     .single();
@@ -433,7 +444,11 @@ export async function moveCandidates(candidates: CandidateRecord[], targetStatus
       const updated = await updateCandidateStatus(candidate.id, targetStatus);
       succeeded.push(updated);
       try {
-        await logTrackingEvent({ candidateId: candidate.id, stage: targetStatus });
+        await logTrackingEvent({
+          candidateId: candidate.id,
+          stage: targetStatus,
+          positionApplied: candidate.applied_position,
+        });
       } catch (err) {
         console.error("Status moved but history log failed", err);
       }
@@ -684,9 +699,11 @@ export async function submitApplication(
       candidateId: candidate.id,
       stage: candidate.status,
       notes: "Application submitted.",
+      positionApplied: candidate.applied_position,
     });
   } catch (err) {
     console.error("Failed to seed tracking history", err);
+    failedSections.push("tracking history");
   }
 
   return { candidate, failedSections };
