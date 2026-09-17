@@ -58,7 +58,7 @@ _env_chain = os.getenv("OLLAMA_VISION_MODELS")
 OLLAMA_VISION_MODELS = (
     [m.strip() for m in _env_chain.split(",") if m.strip()]
     if _env_chain
-    else [os.getenv("OLLAMA_VISION_MODEL", "llama3.2"), "qwen2.5vl", "llava"]
+    else [os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:7b"), "llama3.2", "llava"]
 )
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
