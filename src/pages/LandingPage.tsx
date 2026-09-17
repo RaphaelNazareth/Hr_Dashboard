@@ -3,15 +3,11 @@ import { useLocation } from "react-router-dom";
 import { SiteLayout } from "@/components/site/SiteLayout";
 import { Hero } from "@/components/sections/Hero";
 import { Story } from "@/components/sections/Story";
-import { Journey } from "@/components/sections/Journey";
-import { People } from "@/components/sections/people";
+import { People } from "@/components/sections/People";
 // import { DayInTheLife } from "@/components/sections/DayInTheLife";
-import { Culture } from "@/components/sections/Culture";
 import { OpenJobs } from "@/components/sections/OpenJobs";
 import { CandidateExperience } from "@/components/sections/CandidateExperience";
-import { HrTeaser } from "@/components/sections/HrTeaser";
 import { FinalCta } from "@/components/sections/FinalCta";
-import LifeAtCompany from "@/components/sections/life-at-company";
 /**
  * Public careers landing page — the site's front door. The HR dashboard lives
  * behind the "Sign In" call-to-action at /dashboard.

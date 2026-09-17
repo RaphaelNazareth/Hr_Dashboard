@@ -22,7 +22,6 @@ import {
   Link as LinkIcon,
   Check,
   Trash2,
-  Users,
   ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
