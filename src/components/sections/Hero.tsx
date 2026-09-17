@@ -1,12 +1,12 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, ArrowDown } from "lucide-react";
 import { useEffect, useRef } from "react";
-import heroImage from "@/assets/hero-studio.jpg";
+import heroImage from "@/assets/hero-studio.png";
 import heroImagePortrait from "@/assets/hero-studio-portrait.jpg";
 import { Button } from "@/components/ui/button";
 
 /** Upscale that gives the parallax room to travel without exposing an edge. */
-const HERO_SCALE = 1.12;
+const HERO_SCALE = 1.15;
 
 /** PLACEHOLDER PHOTOGRAPHY: replace hero-studio*.jpg with approved imagery. */
 export function Hero() {
@@ -21,8 +21,6 @@ export function Hero() {
       raf = requestAnimationFrame(() => {
         const el = imgRef.current;
         if (!el) return;
-        // Never travel further than the overflow the upscale gives us, or the
-        // image edge would slide into frame.
         const maxShift = (el.offsetHeight * (HERO_SCALE - 1)) / 2;
         const y = Math.min(window.scrollY * 0.18, maxShift);
         el.style.transform = `translate3d(0, ${y}px, 0) scale(${HERO_SCALE})`;
@@ -38,8 +36,6 @@ export function Hero() {
 
   return (
     <section className="relative isolate flex min-h-[100svh] items-end overflow-hidden bg-ink text-ink-foreground">
-      {/* Phones get a portrait crop of the same frame: less of the shot is thrown
-          away by object-cover, and it ships far fewer bytes than the wide file. */}
       <picture className="contents">
         <source media="(max-width: 767px)" srcSet={heroImagePortrait} width={760} height={1152} />
         <img
@@ -49,18 +45,21 @@ export function Hero() {
           width={1920}
           height={1152}
           fetchPriority="high"
-          className="absolute inset-0 -z-20 h-full w-full scale-[1.12] object-cover object-[40%_center] will-change-transform md:object-[center_15%]"
+          className="absolute inset-0 -z-20 h-full w-full object-contain object-center"
         />
       </picture>
+
+      {/* Vertical wash for general legibility */}
       <div className="absolute inset-0 -z-10 bg-gradient-to-t from-ink via-ink/55 to-ink/20" />
-      <div className="absolute inset-x-0 top-0 -z-10 h-40 bg-gradient-to-b from-ink/50 to-transparent" />
+      {/* Diagonal wash (bottom-left → top-right) to punch up contrast behind the headline specifically */}
+      <div className="absolute inset-0 -z-10 bg-gradient-to-tr from-ink/80 via-ink/25 to-transparent" />
+      {/* Slightly heavier top overlay so the nav sits on a consistent dark band regardless of what's behind it */}
+      <div className="absolute inset-x-0 top-0 -z-10 h-48 bg-gradient-to-b from-ink/70 via-ink/35 to-transparent" />
 
       <div className="container-editorial relative w-full pb-16 pt-40 md:pb-24">
         <div className="grid gap-10 md:grid-cols-12 md:items-end">
           <div className="md:col-span-8">
-            <p className="eyebrow mb-6 text-ink-muted animate-in fade-in slide-in-from-bottom-2 duration-700">
-              Careers · Global Play & Family Entertainment
-            </p>
+            
             <h1 className="display-xl text-balance-pretty animate-in fade-in slide-in-from-bottom-4 duration-1000">
               Empowering the
               <br />
@@ -75,21 +74,28 @@ export function Hero() {
               potential. Come help us do it.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Button asChild variant="paper" size="xl" className="w-full sm:w-auto">
+              <Button
+                asChild
+                size="xl"
+                className="w-full bg-accent text-accent-foreground hover:bg-accent/90 sm:w-auto"
+              >
                 <Link to="/#jobs">
                   Explore Opportunities <ArrowRight />
                 </Link>
               </Button>
-              <Button asChild variant="outline-paper" size="xl" className="w-full sm:w-auto">
-                <Link to="/#life">
-                  Life at the Company
-                </Link>
+              <Button
+                asChild
+                variant="outline"
+                size="xl"
+                className="w-full border-ink-foreground/60 bg-transparent text-ink-foreground hover:bg-ink-foreground/10 sm:w-auto"
+              >
+                <Link to="/#life">Life at the Company</Link>
               </Button>
             </div>
           </div>
         </div>
 
-        <div className="mt-16 flex items-center justify-between border-t border-ink-foreground/20 pt-5 text-xs text-ink-muted">
+        <div className="mt-24 flex items-center justify-between border-t border-ink-foreground/20 pt-6 text-xs text-ink-muted md:mt-28">
           <span className="inline-flex items-center gap-2">
             <ArrowDown className="size-3.5 animate-bounce" /> Scroll to explore
           </span>

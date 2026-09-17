@@ -110,6 +110,39 @@
   --sidebar-ring: oklch(0.439 0 0);
 }
 
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(35px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-35px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Application Examples */
+.element-right {
+  animation: slideInRight 10s infinite;
+}
+
+.element-left {
+  animation: slideInLeft 10s infinite;
+}
+
 @layer base {
   * {
     border-color: var(--border);

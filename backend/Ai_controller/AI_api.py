@@ -21,17 +21,21 @@ offer.
 import json
 import os
 import uuid
+from pathlib import Path
 from typing import Any, Literal
 
 import psycopg
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from dotenv import load_dotenv
 from ollama import AsyncClient
 from pydantic import BaseModel, Field
 
 from . import intent as intent_mod
 from .memory import STORE, remember_result
 from .Ollama_tools import HANDLERS, TOOLS
+
+load_dotenv(Path(__file__).parent / "AI.ENV")
 
 router = APIRouter(prefix="/controller", tags=["controller"])
 
@@ -43,7 +47,6 @@ client = AsyncClient(host=os.getenv("OLLAMA_HOST", "http://localhost:11434"))
 # reporting "not configured" even after .env was fixed.
 def _database_url() -> str:
     return os.getenv("DATABASE_URL", "")
-
 
 MAX_TOOL_HOPS = int(os.getenv("MAX_AGENT_TOOL_HOPS", "4"))
 

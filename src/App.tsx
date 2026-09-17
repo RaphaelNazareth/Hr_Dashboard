@@ -19,7 +19,8 @@ import { ProfilesPage } from './pages/Profiles';
 import { JobsPage } from './pages/JobsPage';
 import { ApplyPage } from './pages/ApplyPage';
 import { LandingPage } from './pages/LandingPage';
-
+import LifeAtCompany from "./components/sections/life-at-company";
+import { CandidatePortal } from './components/sections/CandidatePortal';
 const AppRoutes: FC = () => {
   return (
     <Routes>
@@ -93,6 +94,15 @@ const AppRoutes: FC = () => {
       <Route
         path="/apply/:jobId"
         element={<ApplyPage />}
+      />
+      {/* Candidate Portal Route */}
+      <Route
+        path="/candidate-portal"
+        element={<CandidatePortal />}
+      />
+      <Route
+        path="/life-at-company"
+        element={<LifeAtCompany />}
       />
     </Routes>
   );

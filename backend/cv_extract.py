@@ -10,13 +10,10 @@ import pytesseract
 from PIL import Image
 
 import os
-
-from dotenv import load_dotenv
-from google import genai
-from google.genai import errors
-
 import json
 
+import ollama
+from ollama import ResponseError
 from rapidfuzz import process, fuzz
 
 # --- Config -----------------------------------------------------------
@@ -25,16 +22,21 @@ MIN_CHARS_PER_PAGE = 30   # below this, a page is treated as having no usable te
 OCR_RENDER_DPI = 300
 OCR_LANG = "eng+ind"
 
-# --- Gemini model fallback chain, highest to lowest priority ---
-GEMINI_MODELS = [
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3-flash",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-]
+# --- Ollama model fallback chain, highest to lowest priority ---
+# Unlike Gemini, these don't fail on quota -- they fail because a model
+# isn't pulled locally, the daemon is busy loading it, or it OOMs. The
+# fallback chain still buys resilience across those cases. Override the
+# whole chain with OLLAMA_TEXT_MODELS="model1,model2,...", or just the
+# first choice with OLLAMA_MODEL.
+_env_chain = os.getenv("OLLAMA_TEXT_MODELS")
+OLLAMA_MODELS = (
+    [m.strip() for m in _env_chain.split(",") if m.strip()]
+    if _env_chain
+    else [os.getenv("OLLAMA_MODEL", "llama3.2"), "qwen2.5:7b", "mistral"]
+)
+
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+_client = ollama.Client(host=OLLAMA_HOST)
 
 PDF_EXTENSIONS = {".pdf"}
 
@@ -259,13 +261,6 @@ INDONESIAN_CITIES = [
   "Manokwari"
 ]
 
-# --- API Key -----------------------------------------------------------
-
-load_dotenv()
-client = genai.Client(
-    api_key=os.environ["GEMINI_API_KEY"]
-)
-
 # --- Step 1: get raw text out of the PDF, page by page -----------------
 
 def _ocr_page_image(pil_image: Image.Image) -> str:
@@ -401,7 +396,8 @@ def extract_cv_text(file_path: str | Path) -> str:
     raw_text = get_raw_text(file_path)
     return clean_text(raw_text)
 
-def extract_information_with_gemini(cv_text: str) -> dict:
+
+def extract_information_with_ollama(cv_text: str) -> dict:
     prompt = f"""
     You are an expert information extraction assistant.
     You are given text extracted from an applicant's Curriculum Vitae (CV).
@@ -485,31 +481,28 @@ def extract_information_with_gemini(cv_text: str) -> dict:
     response = None
     last_error = None
 
-    for model_name in GEMINI_MODELS:
+    for model_name in OLLAMA_MODELS:
         try:
-            response = client.models.generate_content(
+            response = _client.chat(
                 model=model_name,
-                contents=prompt,
+                messages=[{"role": "user", "content": prompt}],
+                format="json",
+                options={"temperature": 0},
             )
             break  # success -- stop trying further models
-        except errors.ClientError as e:
-            # Quota/rate-limit errors are typically HTTP 429. Only these
-            # should trigger a fallback to the next model -- anything else
-            # (bad request, auth failure, etc.) is a real problem and
-            # should surface immediately rather than being masked.
-            if e.code == 429:
-                last_error = e
-                continue
-            raise
+        except ResponseError as e:
+            # Typically means the model isn't pulled locally, or the
+            # daemon rejected the request -- fall through to the next
+            # model in the chain rather than failing the whole request.
+            last_error = e
+            continue
 
     if response is None:
         raise RuntimeError(
-            f"All Gemini models in the fallback chain hit rate limits. Last error: {last_error}"
+            f"All Ollama models in the fallback chain failed. Last error: {last_error}"
         )
 
-
-    raw = response.text.strip()
-
+    raw = response["message"]["content"].strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
         raw = raw.split("\n", 1)[-1] if raw.lower().startswith("json") else raw
@@ -517,9 +510,10 @@ def extract_information_with_gemini(cv_text: str) -> dict:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Gemini did not return valid JSON: {e}\nRaw output: {raw}")
+        raise ValueError(f"Ollama did not return valid JSON: {e}\nRaw output: {raw}")
 
     return data
+
 
 def match_city(raw_city: str | None, threshold: int = 85) -> str:
     if not raw_city:
@@ -529,9 +523,10 @@ def match_city(raw_city: str | None, threshold: int = 85) -> str:
         return match[0]
     return "Other / Lainnya"
 
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python cv_text_extract.py <path_to_cv.pdf>")
+        print("Usage: python cv_extract.py <path_to_cv.pdf>")
         sys.exit(1)
 
     cv_text = extract_cv_text(sys.argv[1])
@@ -539,7 +534,7 @@ if __name__ == "__main__":
     print("===== EXTRACTED TEXT =====")
     print(cv_text)
 
-    print("\n===== GEMINI OUTPUT (parsed JSON) =====")
-    data = extract_information_with_gemini(cv_text)
+    print("\n===== OLLAMA OUTPUT (parsed JSON) =====")
+    data = extract_information_with_ollama(cv_text)
     data["city"] = match_city(data["city"])
     print(json.dumps(data, indent=2, ensure_ascii=False))

@@ -2,7 +2,7 @@
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import tempfile, os
-from cv_extract import extract_cv_text, extract_information_with_gemini, match_city
+from cv_extract import extract_cv_text, extract_information_with_ollama, match_city
 from ktp_extract import extract_and_validate
 
 app = FastAPI()
@@ -19,6 +19,7 @@ try:
 except Exception as exc:  # pragma: no cover - optional subsystem
     print(f"[warn] controller not mounted, /controller/chat will 404: {exc}")
 
+
 @app.post("/api/extract-cv")
 async def extract_cv(file: UploadFile):
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
@@ -26,11 +27,12 @@ async def extract_cv(file: UploadFile):
         tmp_path = tmp.name
     try:
         text = extract_cv_text(tmp_path)
-        data = extract_information_with_gemini(text)
+        data = extract_information_with_ollama(text)
         data["city"] = match_city(data.get("city"))
         return data
     finally:
         os.remove(tmp_path)
+
 
 @app.post("/api/extract-ktp")
 async def extract_ktp(file: UploadFile):

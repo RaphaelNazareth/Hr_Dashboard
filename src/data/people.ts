@@ -1,53 +1,43 @@
-/**
- * Employee stories.
- * PLACEHOLDER CONTENT: replace names, roles, quotes and photos with approved
- * real employee stories. Photos are generated placeholders in src/assets.
- */
-import personEngineer from "@/assets/person-engineer.jpg";
-import personMarketing from "@/assets/person-marketing.jpg";
-import personDesigner from "@/assets/person-designer.jpg";
-import personManufacturing from "@/assets/person-manufacturing.jpg";
+import people1 from "@/assets/people1.png";
+import people2 from "@/assets/people2.jpeg";
+import people3 from "@/assets/people3.jpg";
+import people4 from "@/assets/people4.jpeg";
 
-export interface Person {
-  id: string;
-  name: string;
-  role: string;
-  location: string;
-  quote: string;
-  photo: string;
-}
-
-export const people: Person[] = [
+export const people = [
   {
-    id: "p1",
-    name: "Mette Larsen",
+    id: "people1",
+    name: "Daniel Tan",
     role: "Product Engineer",
-    location: "Billund",
-    quote: "I've always enjoyed solving problems that don't have obvious answers.",
-    photo: personEngineer,
+    location: "Jakarta",
+    photo: people1,
+    quote:
+      "I like taking an idea and figuring out how to make it actually work. There’s something pretty satisfying about seeing a prototype come together.",
   },
   {
-    id: "p2",
-    name: "David Okafor",
-    role: "Marketing Manager",
-    location: "London",
-    quote: "Every project brings together people with completely different perspectives.",
-    photo: personMarketing,
+    id: "people2",
+    name: "Maya Chen",
+    role: "Product Manager",
+    location: "Jakarta",
+    photo: people2,
+    quote:
+      "I get to work with a bit of everyone. One day I’m talking with designers, the next I’m figuring things out with the engineering team. It keeps things interesting.",
   },
   {
-    id: "p3",
-    name: "Tomás Reyes",
-    role: "Product Designer",
-    location: "Los Angeles",
-    quote: "I get to see an idea go from a sketch to something real.",
-    photo: personDesigner,
+    id: "people3",
+    name: "Sofia Hart",
+    role: "Creative Designer",
+    location: "Jakarta",
+    photo: people3,
+    quote:
+      "I’ve always liked making things look and feel a little more fun. Here, I get to turn those ideas into something people can actually play with.",
   },
   {
-    id: "p4",
-    name: "Karen Whitfield",
-    role: "Manufacturing Team Lead",
-    location: "Monterrey",
-    quote: "The best day is when a new line runs smoothly for the first time.",
-    photo: personManufacturing,
+    id: "people4",
+    name: "Arif Pratama",
+    role: "Operations Specialist",
+    location: "Jakarta",
+    photo: people4,
+    quote:
+      "There’s a lot that happens before a product reaches the shelf. I like being part of that process and finding small ways to make things run better.",
   },
 ];

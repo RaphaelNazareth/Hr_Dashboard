@@ -9,12 +9,10 @@ export const brand = {
   suffix: "Careers",
   legalName: "Playco Global Toys & Entertainment",
   tagline: "Empowering the next generation through play.",
-} as const;
-
-export const navLinks = [
-  { label: "Life at the Company", to: "/#life" },
+} as const;export const navLinks = [
+  { label: "About us", to: "/#life" },
+  { label: "Life at the Company", to: "/life-at-company" },
   { label: "People", to: "/#people" },
-  { label: "How We Work", to: "/#how-we-work" },
   { label: "Jobs", to: "/#jobs" },
 ] as const;
 
@@ -22,13 +20,16 @@ export const footerLinks = {
   explore: [
     { label: "Careers", to: "/" },
     { label: "Jobs", to: "/#jobs" },
-    { label: "Life at the Company", to: "/#life" },
+    { label: "About us", to: "/#life" },
     { label: "People", to: "/#people" },
+    { label: "Life at the Company", to: "/life-at-company" },
   ],
+
   portals: [
     { label: "Candidate Portal", to: "/apply" },
     { label: "HR Dashboard", to: "/dashboard" },
   ],
+
   legal: [
     { label: "Privacy", to: "/" },
     { label: "Terms", to: "/" },

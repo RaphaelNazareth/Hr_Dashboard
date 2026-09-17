@@ -1,42 +1,46 @@
 """
-ktp_extract_gemini.py
+ktp_extract.py
 
-KTP (Indonesian Identity Card) extraction using Gemini's multimodal
-image understanding -- no OCR, no preprocessing, no regex field parsing.
+KTP (Indonesian Identity Card) extraction using a local Ollama vision
+model's multimodal image understanding -- no OCR, no preprocessing, no
+regex field parsing.
 
-Why this instead of ktp_extract.py:
-    The old pipeline (cv2 deskew/upscale -> pytesseract -> line-by-line
-    regex/keyword matching) kept failing in two independent ways: (1)
-    preprocessing choices (thresholding, upscale factor, deskew angle)
-    that helped one photo hurt another, and (2) even with clean OCR text,
+Why this instead of an OCR + regex pipeline:
+    Preprocessing choices (thresholding, upscale factor, deskew angle)
+    that help one photo hurt another, and even with clean OCR text,
     reconstructing "label: value" pairs from a linear text dump loses the
     KTP's actual 2D layout (e.g. "Jenis Kelamin" and "Gol. Darah" sitting
     side-by-side on the card, not sequentially).
 
-    Gemini reads the image directly, so it uses the real spatial layout
-    instead of a flattened, error-prone OCR reconstruction of it. This
-    mirrors cv_extract.py's philosophy: extract/preprocess only what's
-    mechanical (here: none of it, we just hand over the image), and let
-    the LLM do all the semantic/field-identification work.
+    A vision-capable model reads the image directly, so it uses the real
+    spatial layout instead of a flattened, error-prone OCR reconstruction
+    of it. This mirrors cv_extract.py's philosophy: extract/preprocess
+    only what's mechanical (here: rendering PDF pages to images, nothing
+    else), and let the model do all the semantic/field-identification
+    work.
+
+    This was originally built against Gemini's multimodal API; it's been
+    swapped to a local Ollama vision model (e.g. llama3.2-vision, llava,
+    qwen2.5vl) so extraction runs fully offline. Ollama has no native PDF
+    support the way Gemini did, so PDFs are rendered to page images with
+    PyMuPDF before being handed to the model.
 
 Usage:
-    python ktp_extract_gemini.py path/to/ktp.jpg
-    python ktp_extract_gemini.py path/to/ktp.pdf
+    python ktp_extract.py path/to/ktp.jpg
+    python ktp_extract.py path/to/ktp.pdf
 """
 
 from __future__ import annotations
 
 import json
-import mimetypes
 import os
 import re
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types as genai_types
-from google.genai import errors
+import fitz  # PyMuPDF
+import ollama
+from ollama import ResponseError
 
 # Reuse the exact same city list + fuzzy matcher the CV extractor uses, so
 # a "Bandung" typed on a KTP and a "Bandung" typed on a CV both resolve to
@@ -46,21 +50,26 @@ from cv_extract import INDONESIAN_CITIES, match_city  # noqa: F401 (re-exported)
 
 # --- Config -----------------------------------------------------------
 
-GEMINI_MODELS = [
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3-flash",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-]
+# Vision-capable models only -- a text-only model (llama3.2, mistral, ...)
+# can't read the card image at all. Override the whole chain with
+# OLLAMA_VISION_MODELS="model1,model2,...", or just the first choice with
+# OLLAMA_VISION_MODEL.
+_env_chain = os.getenv("OLLAMA_VISION_MODELS")
+OLLAMA_VISION_MODELS = (
+    [m.strip() for m in _env_chain.split(",") if m.strip()]
+    if _env_chain
+    else [os.getenv("OLLAMA_VISION_MODEL", "llama3.2"), "qwen2.5vl", "llava"]
+)
+
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+_client = ollama.Client(host=OLLAMA_HOST)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
 PDF_EXTENSIONS = {".pdf"}
+PDF_RENDER_DPI = 300
 
-# Kept in sync with ApplyPage.tsx's option lists so Gemini returns values
-# the dropdowns can consume directly, no translation layer needed.
+# Kept in sync with ApplyPage.tsx's option lists so the model returns
+# values the dropdowns can consume directly, no translation layer needed.
 GENDER_OPTIONS = ["Laki-laki (Male)", "Perempuan (Female)"]
 RELIGION_OPTIONS = [
     "Islam",
@@ -77,40 +86,45 @@ MARITAL_STATUS_OPTIONS = [
     "Widowed / Janda / Duda",
 ]
 
-load_dotenv()
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
+# --- Step 1: load the file as one or more raw image byte strings ---------
 
-# --- Step 1: load the file as a Gemini Part (image or PDF) ---------------
-
-def _load_file_part(file_path: str | Path) -> genai_types.Part:
+def _load_image_bytes(file_path: str | Path) -> list[bytes]:
+    """Returns a list of raw image bytes -- one entry for a plain image,
+    one entry per page for a PDF (Ollama has no native PDF support, so
+    each page is rendered to a PNG first)."""
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(path)
 
     ext = path.suffix.lower()
-    if ext not in IMAGE_EXTENSIONS | PDF_EXTENSIONS:
-        raise ValueError(
-            f"Unsupported file type: {ext}. Supported: {sorted(IMAGE_EXTENSIONS | PDF_EXTENSIONS)}"
-        )
 
-    mime_type, _ = mimetypes.guess_type(path)
-    if mime_type is None:
-        # Gemini accepts PDFs natively too -- no need to render to an image
-        # ourselves, it handles the document directly.
-        mime_type = "application/pdf" if ext == ".pdf" else "image/jpeg"
+    if ext in IMAGE_EXTENSIONS:
+        return [path.read_bytes()]
 
-    return genai_types.Part.from_bytes(data=path.read_bytes(), mime_type=mime_type)
+    if ext in PDF_EXTENSIONS:
+        doc = fitz.open(path)
+        zoom = PDF_RENDER_DPI / 72
+        images = []
+        for page in doc:
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+            images.append(pix.tobytes("png"))
+        doc.close()
+        return images
+
+    raise ValueError(
+        f"Unsupported file type: {ext}. Supported: {sorted(IMAGE_EXTENSIONS | PDF_EXTENSIONS)}"
+    )
 
 
-# --- Step 2: ask Gemini to read the card and return structured JSON ------
+# --- Step 2: ask the vision model to read the card and return structured JSON
 
-def extract_ktp_with_gemini(file_path: str | Path) -> dict:
-    file_part = _load_file_part(file_path)
+def extract_ktp_with_ollama(file_path: str | Path) -> dict:
+    images = _load_image_bytes(file_path)
 
     prompt = f"""
     You are an expert information extraction assistant reading an Indonesian
-    Identity Card (KTP) from the attached image or PDF.
+    Identity Card (KTP) from the attached image(s).
 
     Look at the card directly -- use its visual layout (which fields sit
     next to which, which line a value is printed on) rather than assuming a
@@ -175,29 +189,28 @@ def extract_ktp_with_gemini(file_path: str | Path) -> dict:
     response = None
     last_error = None
 
-    for model_name in GEMINI_MODELS:
+    for model_name in OLLAMA_VISION_MODELS:
         try:
-            response = client.models.generate_content(
+            response = _client.chat(
                 model=model_name,
-                contents=[file_part, prompt],
+                messages=[{"role": "user", "content": prompt, "images": images}],
+                format="json",
+                options={"temperature": 0},
             )
             break  # success -- stop trying further models
-        except errors.ClientError as e:
-            # Only quota/rate-limit (429) errors should fall through to the
-            # next model in the chain -- anything else (bad request, auth
-            # failure, unsupported file, etc.) is a real problem and should
-            # surface immediately rather than being silently retried.
-            if e.code == 429:
-                last_error = e
-                continue
-            raise
+        except ResponseError as e:
+            # Typically means the model isn't pulled locally, doesn't
+            # support images, or the daemon rejected the request -- fall
+            # through to the next model in the chain.
+            last_error = e
+            continue
 
     if response is None:
         raise RuntimeError(
-            f"All Gemini models in the fallback chain hit rate limits. Last error: {last_error}"
+            f"All Ollama vision models in the fallback chain failed. Last error: {last_error}"
         )
 
-    raw = response.text.strip()
+    raw = response["message"]["content"].strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
         raw = raw.split("\n", 1)[-1] if raw.lower().startswith("json") else raw
@@ -205,15 +218,15 @@ def extract_ktp_with_gemini(file_path: str | Path) -> dict:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Gemini did not return valid JSON: {e}\nRaw output: {raw}")
+        raise ValueError(f"Ollama did not return valid JSON: {e}\nRaw output: {raw}")
 
     return data
 
 
 # --- Step 3: light, targeted post-validation ------------------------------
 #
-# Deliberately minimal -- the goal is to catch cases where Gemini's answer
-# can't be trusted as-is, not to re-implement field parsing ourselves.
+# Deliberately minimal -- the goal is to catch cases where the model's
+# answer can't be trusted as-is, not to re-implement field parsing ourselves.
 
 def _validate_nik(nik: str | None) -> tuple[str | None, bool]:
     """Returns (nik, confident). Never guesses or repairs digits -- if it's
@@ -226,7 +239,7 @@ def _validate_nik(nik: str | None) -> tuple[str | None, bool]:
 
 
 def extract_and_validate(file_path: str | Path) -> dict:
-    data = extract_ktp_with_gemini(file_path)
+    data = extract_ktp_with_ollama(file_path)
 
     nik, nik_confident = _validate_nik(data.get("nik"))
     data["nik"] = nik
@@ -241,7 +254,7 @@ def extract_and_validate(file_path: str | Path) -> dict:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python ktp_extract_gemini.py <path_to_ktp_file>")
+        print("Usage: python ktp_extract.py <path_to_ktp_file>")
         sys.exit(1)
 
     result = extract_and_validate(sys.argv[1])

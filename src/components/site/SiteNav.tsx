@@ -57,8 +57,11 @@ export function SiteNav({ transparent = false }: { transparent?: boolean }) {
           <Button asChild variant="ghost" size="sm" className={cn(!solid && "text-ink-foreground hover:bg-ink-foreground/10 hover:text-ink-foreground")}>
             <Link to="/apply">Apply</Link>
           </Button>
+          <Button asChild variant="ghost" size="sm" className={cn(!solid && "text-ink-foreground hover:bg-ink-foreground/10 hover:text-ink-foreground")}>
+            <Link to="/candidate-portal">Candidate Login</Link>
+          </Button>
           <Button asChild variant={solid ? "ink" : "paper"} size="sm">
-            <Link to="/dashboard">Sign In</Link>
+            <Link to="/dashboard">Admin Login</Link>
           </Button>
         </div>
 
@@ -102,8 +105,8 @@ export function SiteNav({ transparent = false }: { transparent?: boolean }) {
               </Link>
             </Button>
             <Button asChild variant="ink" size="lg">
-              <Link to="/dashboard" onClick={() => setOpen(false)}>
-                Sign In
+              <Link to="/candidate-portal" onClick={() => setOpen(false)}>
+                Candidate Login
               </Link>
             </Button>
           </div>

@@ -27,3 +27,4 @@ pytesseract               # OCR wrapper; ALSO needs the Tesseract binary on PATH
 rapidfuzz                 # fuzzy city matching
 httpx                     # HTTP client
 resend                    # transactional email
+#py -m pip install -r requirements.txt
