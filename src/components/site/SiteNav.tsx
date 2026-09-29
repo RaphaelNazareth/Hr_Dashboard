@@ -1,16 +1,25 @@
-import { Link } from "react-router-dom";
-import { Menu, X, ArrowUpRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Menu, X, ArrowUpRight, User, Settings } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
 import { Wordmark } from "./Wordmark";
 import { Button } from "@/components/ui/button";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useLanguage } from "@/hooks/useLanguage";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 export function SiteNav({ transparent = false }: { transparent?: boolean }) {
   const [open, setOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { t } = useLanguage();
+  const navigate = useNavigate();
 
   const navLinks = [
     { label: t("nav.aboutUs"), to: "/#life" },
@@ -35,6 +44,16 @@ export function SiteNav({ transparent = false }: { transparent?: boolean }) {
 
   const solid = !transparent || scrolled || open;
   const toggleTone = solid ? "ink" : "paper";
+
+  const handleCandidateLogin = () => {
+    setLoginOpen(false);
+    navigate("/candidate-portal");
+  };
+
+  const handleAdminLogin = () => {
+    setLoginOpen(false);
+    navigate("/dashboard");
+  };
 
   return (
     <header
@@ -65,11 +84,13 @@ export function SiteNav({ transparent = false }: { transparent?: boolean }) {
 
         <div className="hidden items-center gap-2 lg:flex">
           <LanguageToggle tone={toggleTone} />
-          <Button asChild variant="ghost" size="sm" className={cn(!solid && "text-ink-foreground hover:bg-ink-foreground/10 hover:text-ink-foreground")}>
-            <Link to="/candidate-portal">{t("nav.candidateLogin")}</Link>
-          </Button>
-          <Button asChild variant={solid ? "ink" : "paper"} size="sm">
-            <Link to="/dashboard">{t("nav.adminLogin")}</Link>
+          <Button
+            size="sm"
+            variant={solid ? "ink" : "paper"}
+            onClick={() => setLoginOpen(true)}
+            className="bg-[#A32929] text-white hover:bg-[#8F2424]"
+          >
+            Login
           </Button>
         </div>
 
@@ -108,25 +129,60 @@ export function SiteNav({ transparent = false }: { transparent?: boolean }) {
               <ArrowUpRight className="size-5 shrink-0 text-muted-foreground" />
             </Link>
           ))}
-          <div className="mt-6 grid grid-cols-1 gap-3 xs:grid-cols-2 sm:grid-cols-2">
+          <div className="mt-6 grid grid-cols-1 gap-3">
             <Button asChild variant="outline-ink" size="lg">
               <Link to="/apply" onClick={() => setOpen(false)}>
                 {t("nav.apply")}
               </Link>
             </Button>
-            <Button asChild variant="ink" size="lg">
-              <Link to="/candidate-portal" onClick={() => setOpen(false)}>
-                {t("nav.candidateLogin")}
-              </Link>
-            </Button>
-            <Button asChild variant="outline-ink" size="lg" className="sm:col-span-2">
-              <Link to="/dashboard" onClick={() => setOpen(false)}>
-                {t("nav.adminLogin")}
-              </Link>
+            <Button
+              size="lg"
+              variant="ink"
+              onClick={() => {
+                setOpen(false);
+                setLoginOpen(true);
+              }}
+              className="bg-[#A32929] text-white hover:bg-[#8F2424]"
+            >
+              Login
             </Button>
           </div>
         </div>
       </div>
+
+      {/* Login Selection Modal */}
+      <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center text-xl">Login</DialogTitle>
+            <DialogDescription className="text-center pt-2">
+              Who are you logging in as?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <button
+              onClick={handleCandidateLogin}
+              className="flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-colors hover:bg-muted"
+            >
+              <div className="flex items-center gap-3">
+                <User className="h-5 w-5" />
+                <span className="font-semibold">Candidate</span>
+              </div>
+              <p className="text-sm text-muted-foreground pl-8">Access your candidate portal</p>
+            </button>
+            <button
+              onClick={handleAdminLogin}
+              className="flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-colors hover:bg-muted"
+            >
+              <div className="flex items-center gap-3">
+                <Settings className="h-5 w-5" />
+                <span className="font-semibold">Admin</span>
+              </div>
+              <p className="text-sm text-muted-foreground pl-8">Access the HR dashboard</p>
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

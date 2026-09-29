@@ -243,25 +243,25 @@ export function People() {
 
               {/* Arrows */}
               <div className="flex gap-2">
-                <button
+                <button 
                   type="button"
                   onClick={previous}
                   aria-label={t("people.previous")}
-                  className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-white transition-all duration-200 hover:-translate-x-0.5 hover:bg-black hover:text-white"
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-[#A32929]/30 bg-white text-[#A32929] transition-all duration-200 hover:-translate-x-0.5 hover:bg-[#A32929] hover:text-white"
                 >
-                  <ArrowLeft
+                  <ArrowLeft 
                     size={18}
                     strokeWidth={1.7}
                   />
                 </button>
 
-                <button
+                <button 
                   type="button"
                   onClick={next}
                   aria-label={t("people.next")}
-                  className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-white transition-all duration-200 hover:translate-x-0.5 hover:bg-black hover:text-white"
+                  className="flex h-12 w-12 items-center justify-center rounded-full border border-[#A32929]/30 bg-white text-[#A32929] transition-all duration-200 hover:translate-x-0.5 hover:bg-[#A32929] hover:text-white"
                 >
-                  <ArrowRight
+                  <ArrowRight 
                     size={18}
                     strokeWidth={1.7}
                   />

@@ -4,9 +4,10 @@ import { Reveal } from "@/components/site/Reveal";
 import { SectionHeading } from "@/components/site/SectionHeading";
 import { Button } from "@/components/ui/button";
 import { useLanguage } from "@/hooks/useLanguage";
+import { candidateSteps } from "@/data/culture";
 
 export function CandidateExperience() {
-  const { t, copy } = useLanguage();
+  const { t } = useLanguage();
   return (
     <section className="py-16 sm:py-24 md:py-36">
       <div className="container-editorial grid gap-10 md:grid-cols-12 md:gap-12">
@@ -18,7 +19,11 @@ export function CandidateExperience() {
             size="md"
           />
           <Reveal delay={1} className="mt-8">
-            <Button asChild variant="ink" size="lg">
+            <Button
+              asChild
+              size="lg"
+              className="bg-[#A32929] text-white hover:bg-[#8F2424]"
+            >
               <Link to="/apply">
                 {t("candidate.cta")} <ArrowRight />
               </Link>
@@ -27,9 +32,9 @@ export function CandidateExperience() {
         </div>
 
         <ol className="grid gap-px bg-border md:col-span-8 sm:grid-cols-2 lg:grid-cols-3">
-          {copy.candidate.steps.map((s, i) => {
+          {candidateSteps.map((s, i) => {
             const isLastInRow = (i + 1) % 3 === 0;
-            const isLast = i === copy.candidate.steps.length - 1;
+            const isLast = i === candidateSteps.length - 1;
             return (
               <Reveal
                 as="li"
@@ -37,10 +42,16 @@ export function CandidateExperience() {
                 delay={Math.min(i, 3) as 0 | 1 | 2 | 3}
                 className="relative flex flex-col bg-background p-6 md:min-h-[16rem]"
               >
-                <span className="font-display text-sm font-semibold tracking-[0.2em] text-brand">
+                <span className="font-display text-lg font-semibold tracking-[0.2em] text-brand">
                   0{i + 1}
                 </span>
-                <h3 className="mt-auto pt-10 font-display text-xl font-semibold tracking-tight">
+                <img 
+                  src={s.image} 
+                  alt={s.title} 
+                  className="mt-4 h-16 w-16 object-contain"
+                  loading="lazy"
+                />
+                <h3 className="mt-auto pt-4 font-display text-xl font-semibold tracking-tight">
                   {s.title}
                 </h3>
                 <p className="mt-2 text-sm text-muted-foreground">{s.text}</p>

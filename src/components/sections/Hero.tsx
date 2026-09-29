@@ -77,17 +77,17 @@ export function Hero() {
               <Button
                 asChild
                 size="xl"
-                className="w-full bg-accent text-accent-foreground hover:bg-accent/90 sm:w-auto"
+                 className="mt-8 inline-flex items-center gap-2 bg-red-700 px-6 py-3 text-sm font-semibold text-white transition-all duration-300 hover:bg-red-800 hover:gap-3"
               >
                 <Link to="/#jobs">
                   {t("hero.explore")} <ArrowRight />
                 </Link>
               </Button>
-              <Button
-                asChild
-                variant="outline"
-                size="xl"
-                className="w-full border-ink-foreground/60 bg-transparent text-ink-foreground hover:bg-ink-foreground/10 sm:w-auto"
+              <Button 
+                asChild 
+                variant="outline" 
+                size="xl" 
+                className="w-full !border-[#A32929] !bg-transparent !text-white hover:!bg-transparent hover:!border-[#A32929] hover:!text-white sm:w-auto"
               >
                 <Link to="/#life">{t("hero.life")}</Link>
               </Button>

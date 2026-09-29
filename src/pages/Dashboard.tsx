@@ -2,7 +2,6 @@ import { Header } from '@/components/Header';
 import { DraggableCard } from '@/components/DraggableCard';
 import { QuickLinks } from '@/components/QuickLinks';
 import { RecentActivity } from '@/components/RecentActivity';
-import { WelcomeChecklist } from '@/components/WelcomeChecklist';
 import { useFocusMode } from '@/contexts/FocusModeContext';
 import { storage } from '@/lib/utils';
 import { useState, useEffect, useMemo, type FC } from 'react';
@@ -765,13 +764,9 @@ export const Dashboard: FC = () => {
       <Header />
 
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
-        <div
-          className={`grid gap-4 sm:gap-6 transition-all duration-300 ${
-            isFocusMode ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-12'
-          }`}
-        >
-          {/* Main Content - Left Column: Recruitment Dashboard */}
-          <div className={`space-y-4 sm:space-y-6 ${isFocusMode ? 'col-span-1' : 'lg:col-span-8'}`}>
+        <div className="grid gap-4 sm:gap-6 transition-all duration-300">
+          {/* Main Content - Full Width: Recruitment Dashboard */}
+          <div className="space-y-4 sm:space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h1 className="text-xl font-semibold">Recruitment Dashboard</h1>
               <DateRangeFilter range={dateRange} onChange={setDateRange} />
@@ -821,24 +816,6 @@ export const Dashboard: FC = () => {
               onSegmentClick={(period) => goToCandidates({ noticePeriod: period })}
             />
           </div>
-
-          {/* Sidebar - Right Column - Hidden in focus mode */}
-          {!isFocusMode && (
-            <div className="lg:col-span-4">
-              <div className="sticky top-32 space-y-4 sm:space-y-6">
-                {showWelcome && <WelcomeChecklist onDismiss={handleWelcomeDismiss} />}
-
-                {sidebarCardOrder.map((cardId) => {
-                  const card = renderSidebarCard(cardId);
-                  return card ? (
-                    <DraggableCard key={cardId} id={cardId} onReorder={handleSidebarCardReorder}>
-                      {card}
-                    </DraggableCard>
-                  ) : null;
-                })}
-              </div>
-            </div>
-          )}
         </div>
       </main>
     </div>
