@@ -3,7 +3,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Header } from '@/components/Header';
 import { PageWrapper, PageSection } from '@/components/PageWrapper';
 import { announcements, type Announcement } from '@/data/mockData';
 import { formatRelativeTime } from '@/lib/utils';
@@ -53,8 +52,8 @@ export const CompanyAnnouncementsPage: FC = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
       
+
       <PageWrapper className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-6">
         {/* Header Section */}
         <PageSection index={0} className="mb-6">

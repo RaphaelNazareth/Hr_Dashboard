@@ -2,7 +2,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Header } from '@/components/Header';
 import { PageWrapper, PageSection } from '@/components/PageWrapper';
 import { 
   analyticsMetrics, 
@@ -109,8 +108,8 @@ export const AnalyticsPage: FC = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
       
+
       <PageWrapper className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
         {/* Header Section */}
         <PageSection index={0} className="mb-6">

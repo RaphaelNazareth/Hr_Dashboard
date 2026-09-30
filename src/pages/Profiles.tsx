@@ -16,7 +16,6 @@ import {
   Loader2,
 } from 'lucide-react';
 // Layout
-import { Header } from '@/components/Header';
 import { PageWrapper, PageSection } from '@/components/PageWrapper';
 
 // UI
@@ -267,7 +266,7 @@ export function ProfilesPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
+      
 
       <PageWrapper className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
         <PageSection index={0} className="mb-6">

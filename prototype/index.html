@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PLAYCO — HR Recruitment Dashboard</title>
+<style>
+  :root{
+    --primary:#4f46e5; --primary-dark:#4338ca; --primary-soft:#eef2ff;
+    --ink:#0f172a; --ink-soft:#475569; --ink-faint:#94a3b8;
+    --line:#e2e8f0; --bg:#f1f5f9; --card:#ffffff;
+    --green:#059669; --green-bg:#ecfdf5;
+    --amber:#d97706; --amber-bg:#fffbeb;
+    --red:#dc2626;  --red-bg:#fef2f2;
+    --blue:#2563eb; --blue-bg:#eff6ff;
+    --radius:10px;
+    --shadow:0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04);
+    --shadow-lg:0 10px 24px rgba(15,23,42,.10);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:"Segoe UI", -apple-system, Arial, sans-serif; color:var(--ink); background:var(--bg); font-size:14px;}
+  button{font:inherit; cursor:pointer;}
+  ::selection{background:#c7d2fe;}
+
+  /* ===== Layout ===== */
+  #sidebar{
+    position:fixed; top:0; left:0; bottom:0; width:232px;
+    background:#111827; color:#d1d5db;
+    padding:20px 0; overflow-y:auto; z-index:10;
+  }
+  #main{margin-left:232px; padding:32px 40px; max-width:1240px;}
+
+  .logo{display:flex; align-items:center; gap:10px; padding:0 20px 20px;}
+  .logo-mark{width:34px; height:34px; border-radius:8px; background:linear-gradient(135deg,#6366f1,#a855f7);
+    display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:15px;}
+  .logo b{color:#fff; font-size:16px; letter-spacing:1.5px; display:block;}
+  .logo small{font-size:10.5px; color:#9ca3af;}
+
+  .nav-group{margin:14px 0;}
+  .nav-label{font-size:10px; letter-spacing:1.6px; color:#6b7280; padding:0 20px 8px; text-transform:uppercase;}
+  .nav-item{
+    display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+    background:none; border:none; color:#d1d5db;
+    padding:9px 20px; border-left:3px solid transparent; font-size:13.5px;
+  }
+  .nav-item .ico{width:18px; text-align:center; font-size:14px;}
+  .nav-item:hover{background:#1f2937; color:#fff;}
+  .nav-item.active{border-left-color:var(--primary); background:#1f2937; color:#fff; font-weight:600;}
+  .nav-sep{border:none; border-top:1px solid #1f2937; margin:14px 20px;}
+
+  /* ===== Typography & blocks ===== */
+  h1{font-size:23px; font-weight:700; letter-spacing:-.3px;}
+  h2{font-size:12px; letter-spacing:1.4px; color:var(--ink-faint); text-transform:uppercase; font-weight:700; margin:30px 0 14px;}
+  .sub{color:var(--ink-soft); margin-top:4px; margin-bottom:22px;}
+  .pagehead{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; gap:16px;}
+  .muted{color:var(--ink-faint);}
+  .mt8{margin-top:8px;} .mt16{margin-top:16px;} .mb8{margin-bottom:8px;} .mb16{margin-bottom:16px;}
+  .row{display:flex; gap:10px; align-items:center;}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:18px; box-shadow:var(--shadow);}
+  .grid4{display:grid; grid-template-columns:repeat(4,1fr); gap:16px;}
+  .grid2{display:grid; grid-template-columns:repeat(2,1fr); gap:16px;}
+
+  /* ===== Stat cards ===== */
+  .stat{text-align:left; position:relative; overflow:hidden; transition:transform .12s, box-shadow .12s;}
+  .stat:hover{transform:translateY(-2px); box-shadow:var(--shadow-lg);}
+  .stat .num{font-size:30px; font-weight:800; letter-spacing:-1px;}
+  .stat .lbl{color:var(--ink-soft); margin-top:2px; font-size:13px;}
+  .stat .icon{position:absolute; right:14px; top:14px; width:38px; height:38px; border-radius:10px;
+    display:flex; align-items:center; justify-content:center; font-size:17px;}
+  .ic-indigo{background:var(--primary-soft);} .ic-blue{background:var(--blue-bg);}
+  .ic-amber{background:var(--amber-bg);} .ic-green{background:var(--green-bg);}
+
+  .clickable{cursor:pointer;}
+
+  /* ===== Badges ===== */
+  .badge{
+    display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:3px 10px;
+    border-radius:999px; white-space:nowrap; letter-spacing:.2px;
+    background:#f1f5f9; color:var(--ink-soft);
+  }
+  .badge::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor;}
+  .badge.open,.badge.accepted,.badge.hired,.badge.upcoming,.badge.completed{background:var(--green-bg); color:var(--green);}
+  .badge.screening,.badge.pendingapproval,.badge.feedbacksent,.badge.needsscheduling,.badge.sent,.badge.approved{background:var(--amber-bg); color:var(--amber);}
+  .badge.interview,.badge.scheduled{background:var(--blue-bg); color:var(--blue);}
+  .badge.rejected,.badge.declined,.badge.closed,.badge.draft{background:var(--red-bg); color:var(--red);}
+  .badge.offer{background:var(--primary-soft); color:var(--primary);}
+  .badge.draft{background:#f1f5f9; color:var(--ink-faint);}
+
+  /* ===== Buttons ===== */
+  .btn{
+    display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--line);
+    padding:8px 15px; border-radius:8px; color:var(--ink-soft); font-weight:600; font-size:13px;
+    transition:all .12s; box-shadow:var(--shadow);
+  }
+  .btn:hover{border-color:#cbd5e1; color:var(--ink);}
+  .btn.primary{background:var(--primary); border-color:var(--primary); color:#fff;}
+  .btn.primary:hover{background:var(--primary-dark);}
+  .btn.danger{color:var(--red); border-color:#fecaca; background:var(--red-bg);}
+  .btn.danger:hover{background:#fee2e2;}
+  .btn.sm{padding:5px 11px; font-size:12px;}
+  .linkbtn{background:none; border:none; color:var(--primary); font-weight:600; padding:0; font-size:12.5px;}
+  .linkbtn:hover{text-decoration:underline;}
+
+  /* ===== Forms ===== */
+  .toolbar{display:flex; gap:10px; align-items:center; margin-bottom:18px;}
+  .toolbar input[type=text], .toolbar select{
+    border:1px solid var(--line); border-radius:8px; padding:9px 12px; background:#fff; font:inherit; color:var(--ink);
+  }
+  .toolbar input[type=text]{flex:1; max-width:340px;}
+  .toolbar input:focus, .toolbar select:focus, .field input:focus, .field select:focus, .field textarea:focus{
+    outline:2px solid #c7d2fe; border-color:var(--primary);
+  }
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:12px; font-weight:600; color:var(--ink-soft); margin-bottom:6px;}
+  .field input, .field select, .field textarea{
+    width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 12px; font:inherit; background:#fff; color:var(--ink);
+  }
+  .field textarea{min-height:76px; resize:vertical;}
+
+  /* ===== Tabs ===== */
+  .tabs{display:flex; gap:4px; border-bottom:1px solid var(--line); margin:20px 0 22px;}
+  .tab{background:none; border:none; border-bottom:2px solid transparent; padding:9px 15px; color:var(--ink-soft); font-weight:600; font-size:13.5px; margin-bottom:-1px;}
+  .tab:hover{color:var(--ink);}
+  .tab.active{border-bottom-color:var(--primary); color:var(--primary);}
+  .tab .cnt{background:#e2e8f0; color:var(--ink-soft); border-radius:999px; padding:1px 7px; font-size:11px; margin-left:5px;}
+  .tab.active .cnt{background:var(--primary-soft); color:var(--primary);}
+
+  .breadcrumb{font-size:12.5px; color:var(--ink-faint); margin-bottom:12px;}
+  .breadcrumb button{background:none; border:none; color:var(--ink-faint); padding:0; font-size:12.5px;}
+  .breadcrumb button:hover{color:var(--primary);}
+
+  /* ===== Pipeline ===== */
+  .pipeline{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; align-items:start;}
+  .stage{background:#e9edf3; border-radius:12px; padding:12px; min-height:140px;}
+  .stage h3{font-size:11.5px; letter-spacing:1.2px; text-transform:uppercase; color:var(--ink-soft); font-weight:700;
+    margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;}
+  .stage h3 .cnt{background:#fff; border-radius:999px; padding:1px 8px; font-size:11px; color:var(--ink-soft);}
+  .cand-card{background:#fff; border-radius:10px; padding:12px; margin-bottom:10px; box-shadow:var(--shadow); transition:box-shadow .12s, transform .12s;}
+  .cand-card:hover{box-shadow:var(--shadow-lg); transform:translateY(-1px);}
+  .cand-card .nm{font-weight:700; font-size:13.5px;}
+  .cand-card .avatar{width:30px; height:30px; border-radius:50%; background:var(--primary-soft); color:var(--primary);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:11.5px; flex-shrink:0;}
+  .cand-card .meta{font-size:11.5px; color:var(--ink-faint); margin:8px 0 10px; line-height:1.6;}
+  .move{display:flex; gap:6px;}
+  .move button{flex:1; font-size:11.5px; padding:5px 0; background:#f8fafc; border:1px solid var(--line); border-radius:6px; color:var(--ink-soft); font-weight:600;}
+  .move button:hover:not(:disabled){border-color:var(--primary); color:var(--primary); background:var(--primary-soft);}
+  .move button:disabled{opacity:.35; cursor:default;}
+
+  /* ===== Action items ===== */
+  .action-item{display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; margin-bottom:10px;
+    box-shadow:var(--shadow); transition:all .12s; font-size:13.5px;}
+  .action-item:hover{border-color:#c7d2fe; box-shadow:var(--shadow-lg); transform:translateX(2px);}
+  .action-item .warn{width:34px; height:34px; border-radius:9px; background:var(--amber-bg); color:var(--amber);
+    display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0;}
+  .action-item .arrow{margin-left:auto; color:var(--ink-faint); font-size:16px;}
+
+  /* ===== Today ===== */
+  .today-row{display:flex; gap:16px; align-items:center; width:100%; text-align:left;
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius); padding:13px 16px; margin-bottom:8px;
+    box-shadow:var(--shadow); transition:all .12s;}
+  .today-row:hover{border-color:#c7d2fe; box-shadow:var(--shadow-lg);}
+  .today-row .time{font-weight:800; width:52px; flex-shrink:0; color:var(--primary); font-size:13.5px;}
+  .today-row .what b{display:block; font-size:13.5px;}
+  .today-row .what span{color:var(--ink-faint); font-size:12px;}
+
+  /* ===== Entries ===== */
+  .entry{background:#fff; border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; margin-bottom:12px;
+    box-shadow:var(--shadow); transition:all .12s;}
+  .entry.clickable:hover{border-color:#c7d2fe; box-shadow:var(--shadow-lg);}
+  .entry .top{display:flex; justify-content:space-between; align-items:center; gap:12px;}
+  .entry .nm{font-weight:700; font-size:15px;}
+  .entry .meta{color:var(--ink-faint); font-size:12.5px; margin-top:3px; line-height:1.55;}
+  .entry .apps{margin-top:12px; padding-top:12px; border-top:1px solid var(--line); font-size:12.5px; color:var(--ink-soft); display:flex; flex-wrap:wrap; gap:8px 18px;}
+
+  /* ===== Detail blocks ===== */
+  .detail-block{background:#fff; border:1px solid var(--line); border-radius:var(--radius); padding:18px; margin-bottom:16px; box-shadow:var(--shadow);}
+  .detail-block h3{font-size:11px; letter-spacing:1.3px; text-transform:uppercase; color:var(--ink-faint); margin-bottom:10px; font-weight:700;}
+  .kv{display:grid; grid-template-columns:170px 1fr; row-gap:9px; font-size:13.5px;}
+  .kv dt{color:var(--ink-faint);}
+
+  /* ===== Checklist / progress ===== */
+  .check{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13.5px;}
+  .check:last-child{border-bottom:none;}
+  .check .box{width:19px; height:19px; border:2px solid #cbd5e1; border-radius:6px; background:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:11px; color:#fff; flex-shrink:0; transition:all .12s;}
+  .check.done .box{background:var(--green); border-color:var(--green);}
+  .check.done .txt{color:var(--ink-faint); text-decoration:line-through;}
+  .progress{height:9px; background:#e2e8f0; border-radius:999px; overflow:hidden; margin-top:14px;}
+  .progress > div{height:100%; background:linear-gradient(90deg,#6366f1,#a855f7); border-radius:999px; transition:width .25s;}
+
+  /* ===== Calendar ===== */
+  .cal-grid{display:grid; grid-template-columns:repeat(5,1fr); gap:8px;}
+  .cal-head{font-size:10.5px; letter-spacing:1.2px; color:var(--ink-faint); text-align:center; padding:8px 0; text-transform:uppercase; font-weight:700;}
+  .cal-cell{background:#fff; border:1px solid var(--line); border-radius:10px; min-height:104px; padding:8px; box-shadow:var(--shadow);}
+  .cal-cell .day{font-size:12px; color:var(--ink-faint); margin-bottom:7px; font-weight:600;}
+  .cal-cell.today{border:2px solid var(--primary);}
+  .cal-cell.today .day{color:var(--primary); font-weight:800;}
+  .cal-ev{border:1px solid #ddd6fe; background:var(--primary-soft); border-radius:7px; padding:5px 8px; font-size:11.5px;
+    margin-bottom:5px; text-align:left; width:100%; color:var(--ink); transition:all .12s;}
+  .cal-ev:hover{border-color:var(--primary); box-shadow:var(--shadow);}
+  .cal-ev b{display:block; font-size:11px; color:var(--primary);}
+
+  /* ===== Feedback ===== */
+  .rating{display:flex; gap:8px; margin:8px 0 14px;}
+  .rating button{width:30px; height:30px; border-radius:50%; border:2px solid var(--line); background:#fff; font-size:13px; color:var(--ink-faint); transition:all .12s;}
+  .rating button.on{background:var(--primary); border-color:var(--primary); color:#fff;}
+  .radio-row{display:flex; gap:18px; flex-wrap:wrap; margin:8px 0 14px;}
+  .radio-row label{display:flex; gap:7px; align-items:center; font-size:13.5px; cursor:pointer; color:var(--ink-soft);}
+  .radio-row input{accent-color:var(--primary);}
+
+  .filter-note{background:var(--primary-soft); border:1px solid #ddd6fe; border-radius:var(--radius); padding:10px 14px;
+    font-size:13px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; color:var(--primary-dark);}
+
+  .toast{position:fixed; bottom:26px; right:26px; background:#111827; color:#fff; padding:12px 20px;
+    border-radius:10px; font-size:13.5px; opacity:0; transform:translateY(8px); transition:all .25s; pointer-events:none; box-shadow:var(--shadow-lg); z-index:99;}
+  .toast.show{opacity:1; transform:translateY(0);}
+</style>
+</head>
+<body>
+
+<nav id="sidebar">
+  <div class="logo">
+    <div class="logo-mark">P</div>
+    <div><b>PLAYCO</b><small>HR · Talent Acquisition</small></div>
+  </div>
+  <div class="nav-group">
+    <button class="nav-item" data-route="dashboard"><span class="ico">🏠</span> Dashboard</button>
+  </div>
+  <div class="nav-group">
+    <div class="nav-label">Recruitment</div>
+    <button class="nav-item" data-route="jobs"><span class="ico">💼</span> Job Openings</button>
+    <button class="nav-item" data-route="create-job"><span class="ico">➕</span> Create Job</button>
+    <button class="nav-item" data-route="candidates"><span class="ico">👥</span> Candidates</button>
+    <button class="nav-item" data-route="interviews"><span class="ico">🗓</span> Interviews</button>
+    <button class="nav-item" data-route="offers"><span class="ico">📄</span> Offers</button>
+    <button class="nav-item" data-route="onboarding"><span class="ico">🚀</span> Onboarding</button>
+  </div>
+  <div class="nav-group">
+    <div class="nav-label">Tools</div>
+    <button class="nav-item" data-route="calendar"><span class="ico">📅</span> Calendar</button>
+  </div>
+  <hr class="nav-sep">
+  <button class="nav-item" onclick="toast('Settings — out of scope for this prototype')"><span class="ico">⚙</span> Settings</button>
+</nav>
+
+<main id="main"></main>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= MOCK DATA ================= */
+const today = "September 29, 2026";
+
+const candidates = [
+  {id:"c1", name:"Raphael Nazareth", field:"Computer Engineering", location:"Jakarta",
+   email:"raphael.n@email.com", phone:"+62 812 0000 1111",
+   experience:"3 yrs Data Analyst — Tokopedia\n1 yr Junior Analyst — Bukalapak",
+   education:"S.T. Computer Engineering — Institut Teknologi Bandung (2021)",
+   skills:"SQL · Python · Tableau · A/B Testing · Product Sense"},
+  {id:"c2", name:"Sarah Lee", field:"Software Engineering", location:"Jakarta",
+   email:"sarah.lee@email.com", phone:"+62 813 2222 3333",
+   experience:"4 yrs Backend Engineer — GoTo Financial",
+   education:"B.Sc. Computer Science — NUS (2020)",
+   skills:"Go · TypeScript · PostgreSQL · Kubernetes"},
+  {id:"c3", name:"John Tan", field:"Marketing", location:"Jakarta",
+   email:"john.tan@email.com", phone:"+62 811 4444 5555",
+   experience:"5 yrs Digital Marketing — Unilever",
+   education:"B.A. Communications — University of Indonesia (2019)",
+   skills:"SEO/SEM · Content Strategy · Analytics"},
+  {id:"c4", name:"Michael Wong", field:"Software Engineering", location:"Bandung",
+   email:"michael.w@email.com", phone:"+62 812 6666 7777",
+   experience:"2 yrs Fullstack Developer — Startup",
+   education:"B.Sc. Informatics — ITB (2022)",
+   skills:"React · Node.js · MongoDB"},
+  {id:"c5", name:"Anna Priyanto", field:"Product", location:"Jakarta",
+   email:"anna.p@email.com", phone:"+62 813 8888 9999",
+   experience:"3 yrs Product Owner — Traveloka",
+   education:"B.A. Business — Binus (2020)",
+   skills:"Roadmapping · User Research · Jira"},
+  {id:"c6", name:"Kevin Hartono", field:"Software Engineering", location:"Surabaya",
+   email:"kevin.h@email.com", phone:"+62 811 1212 1212",
+   experience:"6 yrs Senior Engineer — Shopee",
+   education:"B.Sc. Computer Science — Petra (2017)",
+   skills:"Java · Microservices · AWS"},
+  {id:"c7", name:"David Chen", field:"Product / Analytics", location:"Jakarta",
+   email:"david.c@email.com", phone:"+62 812 3434 3434",
+   experience:"4 yrs Product Analyst — Grab",
+   education:"B.Sc. Statistics — UI (2019)",
+   skills:"SQL · Looker · Experimentation"},
+  {id:"c8", name:"Maria Santos", field:"Marketing", location:"Jakarta",
+   email:"maria.s@email.com", phone:"+62 813 5656 5656",
+   experience:"2 yrs Brand Executive — L'Oréal",
+   education:"B.A. Marketing — Atma Jaya (2021)",
+   skills:"Brand Management · Social Media"},
+  {id:"c9", name:"Budi Setiawan", field:"Software Engineering", location:"Jakarta",
+   email:"budi.s@email.com", phone:"+62 811 7878 7878",
+   experience:"3 yrs Frontend Developer — Blibli",
+   education:"S.Kom — Gunadarma (2021)",
+   skills:"Vue · CSS · Testing"},
+  {id:"c10", name:"Lisa Nguyen", field:"Data", location:"Jakarta",
+   email:"lisa.n@email.com", phone:"+62 812 9090 9090",
+   experience:"2 yrs Data Analyst — Ajaib",
+   education:"B.Sc. Data Science — Monash (2022)",
+   skills:"Python · dbt · BigQuery"},
+];
+
+const jobs = [
+  {id:"j1", title:"Product Analyst", dept:"Product", location:"Jakarta", type:"Full Time", status:"Open",
+   manager:"Sarah — Hiring Manager, Product", deadline:"Oct 20, 2026", salary:"Rp 10,000,000 – 14,000,000",
+   description:"Own product analytics for PLAYCO's digital play experiences. Partner with PM and engineering to drive data-informed decisions.",
+   responsibilities:"Define and track product KPIs\nBuild dashboards and run experiments\nPresent insights to stakeholders",
+   requirements:"3+ years analytics experience\nStrong SQL\nExperience with A/B testing"},
+  {id:"j2", title:"Software Engineer", dept:"Engineering", location:"Jakarta", type:"Full Time", status:"Open",
+   manager:"Kevin — Engineering Lead", deadline:"Oct 30, 2026", salary:"Rp 15,000,000 – 22,000,000",
+   description:"Build backend services powering PLAYCO's e-commerce and play platform.",
+   responsibilities:"Design and ship backend services\nImprove reliability and performance\nMentor junior engineers",
+   requirements:"3+ years backend experience\nProficient in Go or Java\nFamiliar with cloud infrastructure"},
+  {id:"j3", title:"Marketing Specialist", dept:"Marketing", location:"Jakarta", type:"Full Time", status:"Open",
+   manager:"Dewi — Marketing Director", deadline:"Oct 15, 2026", salary:"Rp 8,000,000 – 11,000,000",
+   description:"Drive campaigns for PLAYCO toy launches across digital channels.",
+   responsibilities:"Plan and execute campaigns\nManage paid channels\nReport on ROI",
+   requirements:"2+ years digital marketing\nStrong analytical skills"},
+  {id:"j4", title:"Data Analyst", dept:"Data", location:"Jakarta", type:"Full Time", status:"Closed",
+   manager:"Sarah — Hiring Manager, Product", deadline:"Sep 1, 2026", salary:"Rp 9,000,000 – 12,000,000",
+   description:"Support reporting and analysis for the data platform team.",
+   responsibilities:"Build reports\nMaintain data pipelines",
+   requirements:"SQL · Python"},
+  {id:"j5", title:"Product Manager", dept:"Product", location:"Jakarta", type:"Full Time", status:"Open",
+   manager:"Rani — VP Product", deadline:"Nov 5, 2026", salary:"Rp 18,000,000 – 25,000,000",
+   description:"Lead product strategy for PLAYCO's connected-toy line.",
+   responsibilities:"Own product roadmap\nWork cross-functionally with design and engineering",
+   requirements:"5+ years PM experience\nConsumer product background"},
+];
+
+// application = candidate + job. stage: Applied | Screening | Interview | Offer, plus Hired/Rejected terminal
+let applications = [
+  {id:"a1", cand:"c1", job:"j1", stage:"Interview", applied:"Sep 12, 2026"},
+  {id:"a2", cand:"c1", job:"j4", stage:"Rejected",  applied:"Aug 2, 2026"},
+  {id:"a3", cand:"c1", job:"j5", stage:"Screening", applied:"Sep 20, 2026"},
+  {id:"a4", cand:"c2", job:"j1", stage:"Screening", applied:"Sep 15, 2026"},
+  {id:"a5", cand:"c2", job:"j2", stage:"Interview", applied:"Sep 8, 2026"},
+  {id:"a6", cand:"c3", job:"j1", stage:"Applied",   applied:"Sep 24, 2026"},
+  {id:"a7", cand:"c3", job:"j3", stage:"Interview", applied:"Sep 10, 2026"},
+  {id:"a8", cand:"c4", job:"j1", stage:"Applied",   applied:"Sep 25, 2026"},
+  {id:"a9", cand:"c4", job:"j2", stage:"Screening", applied:"Sep 18, 2026"},
+  {id:"a10", cand:"c5", job:"j1", stage:"Screening", applied:"Sep 19, 2026"},
+  {id:"a11", cand:"c6", job:"j2", stage:"Interview", applied:"Sep 5, 2026"},
+  {id:"a12", cand:"c7", job:"j2", stage:"Offer",    applied:"Aug 28, 2026"},
+  {id:"a13", cand:"c7", job:"j1", stage:"Screening", applied:"Sep 22, 2026"},
+  {id:"a14", cand:"c8", job:"j3", stage:"Screening", applied:"Sep 21, 2026"},
+  {id:"a15", cand:"c9", job:"j3", stage:"Applied",  applied:"Sep 26, 2026"},
+  {id:"a16", cand:"c10", job:"j2", stage:"Screening", applied:"Sep 23, 2026"},
+];
+let nextAppId = 100;
+let nextJobId = 100;
+
+// interviews: status = upcoming | needs-scheduling | feedback-pending | completed
+let interviews = [
+  {id:"i1", app:"a1", round:"HR Interview",        time:"09:00 – 10:00", date:"September 29, 2026", interviewer:"Sarah — HR", status:"upcoming"},
+  {id:"i2", app:"a5", round:"Technical Interview", time:"11:00 – 12:00", date:"September 29, 2026", interviewer:"Kevin — Engineering Lead", status:"upcoming"},
+  {id:"i3", app:"a7", round:"Hiring Manager Interview", time:"14:00 – 15:00", date:"September 29, 2026", interviewer:"Dewi — Marketing Director", status:"upcoming"},
+  {id:"i4", app:"a1", round:"Hiring Manager Review", time:"16:00 – 16:45", date:"September 29, 2026", interviewer:"Product hiring panel", status:"upcoming", isMeeting:true},
+  {id:"i5", app:"a11", round:"Technical Interview", time:"—", date:"—", interviewer:"Kevin — Engineering Lead", status:"needs-scheduling"},
+  {id:"i6", app:"a12", round:"Final Interview",     time:"—", date:"—", interviewer:"Rani — VP Product", status:"needs-scheduling"},
+  {id:"i7", app:"a1",  round:"Interview #1 — HR",   time:"10:00 – 11:00", date:"September 25, 2026", interviewer:"Sarah — HR", status:"feedback-pending"},
+  {id:"i8", app:"a5",  round:"Interview #1 — Screening Call", time:"15:00 – 15:30", date:"September 26, 2026", interviewer:"Sarah — HR", status:"feedback-pending"},
+  {id:"i9", app:"a7",  round:"Interview #1 — HR",   time:"09:00 – 09:45", date:"September 26, 2026", interviewer:"Sarah — HR", status:"feedback-pending"},
+  {id:"i10", app:"a12", round:"Interview #2 — Hiring Manager", time:"13:00 – 14:00", date:"September 22, 2026", interviewer:"Kevin — Engineering Lead", status:"completed",
+    feedback:{rating:4, rec:"Yes", notes:"Strong system design. Recommended to move to offer."}},
+  {id:"i11", app:"a11", round:"Interview #1 — HR",  time:"10:00 – 10:45", date:"September 20, 2026", interviewer:"Sarah — HR", status:"completed",
+    feedback:{rating:5, rec:"Strong Yes", notes:"Excellent communication, proceeds to technical round."}},
+];
+let nextInterviewId = 100;
+
+// offers: status = pending-approval | approved | sent | accepted | declined
+let offers = [
+  {id:"o1", app:"a12", salary:"Rp 18,000,000", startDate:"October 15, 2026", status:"pending-approval",
+   benefits:"Health insurance (family)\n12 days annual leave\nGym & learning stipend\nAnnual bonus"},
+  {id:"o2", app:"a7", salary:"Rp 9,500,000", startDate:"November 1, 2026", status:"sent",
+   benefits:"Health insurance\n12 days annual leave"},
+  {id:"o3", app:"a11", salary:"Rp 20,000,000", startDate:"September 15, 2026", status:"accepted",
+   benefits:"Health insurance (family)\n14 days annual leave\nRSU"},
+  {id:"o4", app:"a2", salary:"Rp 10,000,000", startDate:"—", status:"declined",
+   benefits:"Health insurance"},
+];
+let nextOfferId = 100;
+
+// onboarding entries (auto-created when offer accepted; seeded for Kevin Hartono)
+let onboardings = [
+  {id:"n1", offer:"o3",
+   steps:{accepted:true, documents:true, background:true, equipment:false, email:false, access:false, orientation:false, ready:false}},
+];
+
+const STAGES = ["Applied","Screening","Interview","Offer"];
+
+/* ================= HELPERS ================= */
+const $ = (sel)=>document.querySelector(sel);
+const cand = (id)=>candidates.find(c=>c.id===id);
+const job  = (id)=>jobs.find(j=>j.id===id);
+const app  = (id)=>applications.find(a=>a.id===id);
+const interview = (id)=>interviews.find(i=>i.id===id);
+const offer = (id)=>offers.find(o=>o.id===id);
+const esc = (s)=>String(s??"").replace(/[&<>"]/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+const initials = (name)=>name.split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase();
+const badgeCls = (s)=>s.toLowerCase().replace(/[\s-]/g,"");
+function badge(txt){ return `<span class="badge ${badgeCls(txt)}">${esc(txt)}</span>`; }
+function count(filter){ return applications.filter(filter).length; }
+function toast(msg){
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+/* ================= ROUTER ================= */
+function navigate(hash){ location.hash = hash; }
+function parseHash(){
+  const h = location.hash.replace(/^#\/?/, "") || "dashboard";
+  const [path, qs] = h.split("?");
+  const params = Object.fromEntries(new URLSearchParams(qs||""));
+  const seg = path.split("/").filter(Boolean);
+  return {seg, params};
+}
+window.addEventListener("hashchange", render);
+window.addEventListener("DOMContentLoaded", render);
+
+function render(){
+  const {seg, params} = parseHash();
+  const page = seg[0] || "dashboard";
+  document.querySelectorAll(".nav-item[data-route]").forEach(b=>{
+    let r = b.dataset.route;
+    let active = r===page || (r==="jobs" && page==="job") || (r==="candidates" && page==="candidate")
+      || (r==="interviews" && page==="interview") || (r==="offers" && page==="offer");
+    b.classList.toggle("active", active);
+  });
+  const views = {
+    "dashboard": viewDashboard, "jobs": viewJobs, "job": viewJobDetail,
+    "create-job": viewCreateJob, "candidates": viewCandidates, "candidate": viewCandidateProfile,
+    "interviews": viewInterviews, "interview": viewInterviewDetail,
+    "offers": viewOffers, "offer": viewOfferDetail,
+    "onboarding": viewOnboarding, "calendar": viewCalendar,
+  };
+  const fn = views[page] || viewDashboard;
+  $("#main").innerHTML = fn(seg.slice(1), params);
+  window.scrollTo(0,0);
+}
+
+/* ================= DASHBOARD ================= */
+function actionCounts(){
+  return {
+    screening: applications.filter(a=>a.stage==="Screening" && job(a.job).status==="Open").length,
+    feedback: interviews.filter(i=>i.status==="feedback-pending").length,
+    scheduling: interviews.filter(i=>i.status==="needs-scheduling").length,
+    offers: offers.filter(o=>o.status==="pending-approval").length,
+  };
+}
+function viewDashboard(){
+  const c = actionCounts();
+  const openJobs = jobs.filter(j=>j.status==="Open").length;
+  const todaysEvents = interviews.filter(i=>i.date==="September 29, 2026");
+  return `
+  <h1>Good morning, HR 👋</h1>
+  <p class="sub">${today} · Here's what needs your attention today.</p>
+
+  <div class="grid4">
+    <div class="card stat clickable" onclick="navigate('#/jobs')">
+      <div class="icon ic-indigo">💼</div><div class="num">${openJobs}</div><div class="lbl">Open Jobs</div></div>
+    <div class="card stat clickable" onclick="navigate('#/candidates')">
+      <div class="icon ic-blue">👥</div><div class="num">186</div><div class="lbl">Candidates</div></div>
+    <div class="card stat clickable" onclick="navigate('#/interviews')">
+      <div class="icon ic-amber">🗓</div><div class="num">12</div><div class="lbl">Interviews</div></div>
+    <div class="card stat clickable" onclick="navigate('#/offers')">
+      <div class="icon ic-green">📄</div><div class="num">${offers.length}</div><div class="lbl">Offers</div></div>
+  </div>
+
+  <h2>Needs Your Action</h2>
+  <button class="action-item" onclick="navigate('#/jobs/j1?stage=Screening')">
+    <span class="warn">⚠</span><span><b>${c.screening + 4}</b> candidates need screening</span><span class="arrow">→</span>
+  </button>
+  <button class="action-item" onclick="navigate('#/interviews?tab=feedback-pending')">
+    <span class="warn">⚠</span><span><b>${c.feedback}</b> interview feedback pending</span><span class="arrow">→</span>
+  </button>
+  <button class="action-item" onclick="navigate('#/interviews?tab=needs-scheduling')">
+    <span class="warn">⚠</span><span><b>${c.scheduling}</b> interviews need scheduling</span><span class="arrow">→</span>
+  </button>
+  <button class="action-item" onclick="navigate('#/offers?tab=pending-approval')">
+    <span class="warn">⚠</span><span><b>${c.offers}</b> offer waiting for approval</span><span class="arrow">→</span>
+  </button>
+
+  <h2>Today</h2>
+  ${todaysEvents.map(i=>{
+    const a = app(i.app);
+    return `<button class="today-row" onclick="navigate('#/interview/${i.id}')">
+      <span class="time">${i.time.split(" ")[0]}</span>
+      <span class="what"><b>${i.isMeeting ? "Hiring Manager Review" : "Interview — " + esc(job(a.job).title)}</b>
+      <span>${i.isMeeting ? esc(job(a.job).title) : esc(cand(a.cand).name)} · ${esc(i.round)}</span></span>
+      ${badge(i.isMeeting ? "Meeting" : "Interview")}
+    </button>`;
+  }).join("")}
+  <div class="row mt8"><button class="btn sm" onclick="navigate('#/calendar')">View Calendar →</button></div>
+  `;
+}
+
+/* ================= JOB OPENINGS ================= */
+let jobSearch = "";
+function viewJobs(seg, params){
+  const status = params.status || "All";
+  const list = jobs.filter(j=>
+    (status==="All" || j.status.toLowerCase()===status.toLowerCase()) &&
+    j.title.toLowerCase().includes(jobSearch.toLowerCase()));
+  return `
+  <div class="pagehead">
+    <div><h1>Job Openings</h1><p class="sub" style="margin-bottom:0">${jobs.length} positions · managed by Talent Acquisition</p></div>
+    <button class="btn primary" onclick="navigate('#/create-job')">+ Create Job</button>
+  </div>
+  <div class="toolbar mt16">
+    <input type="text" placeholder="Search jobs..." value="${esc(jobSearch)}"
+      oninput="jobSearch=this.value; render()">
+    <select onchange="navigate('#/jobs?status='+this.value)">
+      ${["All","Open","Draft","Closed"].map(s=>`<option ${s===status?"selected":""}>${s}</option>`).join("")}
+    </select>
+  </div>
+  ${list.map(j=>`
+    <div class="entry clickable" onclick="navigate('#/jobs/${j.id}')">
+      <div class="top">
+        <div class="row" style="align-items:flex-start">
+          <div class="cand-card avatar" style="width:42px;height:42px;border-radius:10px;font-size:15px">${esc(j.title[0])}</div>
+          <div>
+            <div class="nm">${esc(j.title)}</div>
+            <div class="meta">${esc(j.location)} · ${esc(j.type)} · Dept: ${esc(j.dept)}</div>
+            <div class="meta">${count(a=>a.job===j.id)} Applicants · ${interviews.filter(i=>app(i.app) && app(i.app).job===j.id).length} Interviews · Deadline ${esc(j.deadline)}</div>
+          </div>
+        </div>
+        ${badge(j.status)}
+      </div>
+    </div>`).join("") || `<p class="muted">No jobs match.</p>`}
+  `;
+}
+
+/* ================= JOB DETAIL / PIPELINE ================= */
+function viewJobDetail(seg, params){
+  const j = job(seg[0]); if(!j) return "<p>Job not found.</p>";
+  const tab = params.tab || "pipeline";
+  const stageFilter = params.stage || null;
+  const apps = applications.filter(a=>a.job===j.id);
+  return `
+  <div class="breadcrumb"><button onclick="navigate('#/jobs')">Job Openings</button> / ${esc(j.title)}</div>
+  <div class="pagehead">
+    <div>
+      <h1>${esc(j.title)}</h1>
+      <p class="sub" style="margin-bottom:0">${esc(j.location)} · ${esc(j.type)} · ${badge(j.status)}</p>
+    </div>
+    <div class="muted" style="font-weight:600">${apps.length} Applicants</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab ${tab==='details'?'active':''}" onclick="navigate('#/jobs/${j.id}?tab=details')">Job Details</button>
+    <button class="tab ${tab==='pipeline'?'active':''}" onclick="navigate('#/jobs/${j.id}?tab=pipeline')">Recruitment Pipeline <span class="cnt">${apps.length}</span></button>
+  </div>
+
+  ${tab==="details" ? `
+    <div class="detail-block"><h3>Description</h3><p style="line-height:1.6">${esc(j.description)}</p></div>
+    <div class="grid2">
+      <div class="detail-block"><h3>Responsibilities</h3><p style="white-space:pre-line; line-height:1.7">${esc(j.responsibilities)}</p></div>
+      <div class="detail-block"><h3>Requirements</h3><p style="white-space:pre-line; line-height:1.7">${esc(j.requirements)}</p></div>
+    </div>
+    <div class="detail-block"><h3>Details</h3>
+      <dl class="kv">
+        <dt>Department</dt><dd>${esc(j.dept)}</dd>
+        <dt>Employment Type</dt><dd>${esc(j.type)}</dd>
+        <dt>Salary Range</dt><dd>${esc(j.salary)}</dd>
+        <dt>Hiring Manager</dt><dd>${esc(j.manager)}</dd>
+        <dt>Application Deadline</dt><dd>${esc(j.deadline)}</dd>
+      </dl>
+    </div>
+    <div class="row">
+      ${j.status==="Draft" ? `<button class="btn primary" onclick="setJobStatus('${j.id}','Open')">Publish Job</button>` : ""}
+      ${j.status==="Open" ? `<button class="btn" onclick="setJobStatus('${j.id}','Closed')">Close Job</button>` : ""}
+      ${j.status==="Closed" ? `<button class="btn" onclick="setJobStatus('${j.id}','Open')">Reopen Job</button>` : ""}
+      <button class="btn" onclick="createInterviewForJob('${j.id}')">Schedule Interview…</button>
+    </div>
+  ` : `
+    ${stageFilter ? `
+      <div class="filter-note">
+        <span>Filtered to stage: <b>${esc(stageFilter)}</b> — these candidates are waiting for screening.</span>
+        <button class="linkbtn" onclick="navigate('#/jobs/${j.id}?tab=pipeline')">Clear filter ✕</button>
+      </div>` : ""}
+    <div class="pipeline">
+      ${STAGES.map(s=>{
+        const inStage = apps.filter(a=>a.stage===s);
+        const dimmed = stageFilter && stageFilter!==s;
+        return `<div class="stage" style="${dimmed?'opacity:.4':''}">
+          <h3>${s}<span class="cnt">${inStage.length}</span></h3>
+          ${inStage.map(a=>{
+            const c = cand(a.cand);
+            return `<div class="cand-card">
+              <div class="row" style="gap:10px">
+                <div class="avatar">${initials(c.name)}</div>
+                <div><div class="nm">${esc(c.name)}</div>
+                <div class="meta" style="margin:2px 0 0">${esc(c.field)}</div></div>
+              </div>
+              <div class="meta">Applied ${esc(a.applied)} · ${esc(c.location)}</div>
+              <div class="row" style="justify-content:space-between">
+                <button class="linkbtn" onclick="navigate('#/candidates/${c.id}')">View Profile</button>
+                ${badge(s)}
+              </div>
+              <div class="move mt8">
+                <button ${STAGES.indexOf(s)===0?'disabled':''} onclick="moveStage('${a.id}',-1)">← Back</button>
+                <button ${STAGES.indexOf(s)===STAGES.length-1?'disabled':''} onclick="moveStage('${a.id}',1)">Advance →</button>
+              </div>
+            </div>`;
+          }).join("") || `<p class="muted" style="font-size:12px">No candidates</p>`}
+        </div>`;
+      }).join("")}
+    </div>
+    <p class="muted mt16" style="font-size:12px">Candidate + Job Opening → Application. The pipeline tracks the <b>application</b>, not the person — a candidate can apply to multiple jobs. Advancing to “Offer” automatically creates a pending-approval offer.</p>
+  `}
+  `;
+}
+function setJobStatus(id, st){ job(id).status = st; toast(`Job status → ${st}`); render(); }
+function moveStage(appId, dir){
+  const a = app(appId);
+  const idx = STAGES.indexOf(a.stage);
+  const next = STAGES[idx+dir];
+  if(!next) return;
+  a.stage = next;
+  toast(`${cand(a.cand).name} moved to ${next}`);
+  if(next==="Offer"){
+    const dup = offers.find(o=>o.app===a.id);
+    if(!dup){
+      offers.unshift({id:"o"+(nextOfferId++), app:a.id, salary:"Rp —", startDate:"—", status:"pending-approval", benefits:"—"});
+      toast("Offer created — pending approval");
+    }
+  }
+  render();
+}
+function createInterviewForJob(jobId){
+  const a = applications.find(x=>x.job===jobId && x.stage==="Interview") || applications.find(x=>x.job===jobId);
+  if(!a){ toast("No candidates in pipeline yet"); return; }
+  interviews.push({id:"i"+(nextInterviewId++), app:a.id, round:"HR Interview", time:"—", date:"—", interviewer:"Sarah — HR", status:"needs-scheduling"});
+  toast("Interview added to Needs Scheduling");
+  navigate("#/interviews?tab=needs-scheduling");
+}
+
+/* ================= CREATE JOB ================= */
+function viewCreateJob(){
+  return `
+  <div class="breadcrumb"><button onclick="navigate('#/jobs')">Job Openings</button> / Create Job</div>
+  <h1>Create Job</h1>
+  <p class="sub">Draft or publish a new job opening.</p>
+  <div class="card" style="max-width:680px">
+    <div class="field"><label>Job Title *</label><input type="text" id="nj-title" placeholder="e.g. UX Designer"></div>
+    <div class="grid2">
+      <div class="field"><label>Department</label><input type="text" id="nj-dept" placeholder="e.g. Design"></div>
+      <div class="field"><label>Location</label><input type="text" id="nj-loc" placeholder="e.g. Jakarta"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>Employment Type</label>
+        <select id="nj-type"><option>Full Time</option><option>Part Time</option><option>Contract</option><option>Internship</option></select></div>
+      <div class="field"><label>Application Deadline</label><input type="text" id="nj-deadline" placeholder="e.g. Nov 30, 2026"></div>
+    </div>
+    <div class="field"><label>Job Description</label><textarea id="nj-desc" placeholder="Short summary of the role..."></textarea></div>
+    <div class="field"><label>Responsibilities</label><textarea id="nj-resp" placeholder="One per line..."></textarea></div>
+    <div class="field"><label>Requirements</label><textarea id="nj-req" placeholder="One per line..."></textarea></div>
+    <div class="grid2">
+      <div class="field"><label>Salary Range</label><input type="text" id="nj-salary" placeholder="Rp X – Rp Y"></div>
+      <div class="field"><label>Hiring Manager</label><input type="text" id="nj-mgr" placeholder="Name — Role"></div>
+    </div>
+    <div class="row mt16">
+      <button class="btn" onclick="saveNewJob('Draft')">Save Draft</button>
+      <button class="btn primary" onclick="saveNewJob('Open')">Publish Job</button>
+    </div>
+  </div>`;
+}
+function saveNewJob(status){
+  const t = $("#nj-title").value.trim();
+  if(!t){ toast("Job Title is required"); return; }
+  const j = {
+    id:"j"+(nextJobId++), title:t, dept:$("#nj-dept").value||"—", location:$("#nj-loc").value||"—",
+    type:$("#nj-type").value, status, manager:$("#nj-mgr").value||"—", deadline:$("#nj-deadline").value||"—",
+    salary:$("#nj-salary").value||"—", description:$("#nj-desc").value||"—",
+    responsibilities:$("#nj-resp").value||"—", requirements:$("#nj-req").value||"—",
+  };
+  jobs.unshift(j);
+  toast(status==="Open" ? "Job published" : "Draft saved");
+  navigate("#/jobs/"+j.id+"?tab=details");
+}
+
+/* ================= CANDIDATES ================= */
+let candSearch = "";
+function viewCandidates(){
+  const list = candidates.filter(c=>c.name.toLowerCase().includes(candSearch.toLowerCase()) || c.field.toLowerCase().includes(candSearch.toLowerCase()));
+  return `
+  <h1>Candidates</h1>
+  <p class="sub">Global candidate database — one record per person, many applications each.</p>
+  <div class="toolbar">
+    <input type="text" placeholder="Search candidates..." value="${esc(candSearch)}" oninput="candSearch=this.value; render()">
+  </div>
+  ${list.map(c=>{
+    const apps = applications.filter(a=>a.cand===c.id);
+    return `<div class="entry clickable" onclick="navigate('#/candidates/${c.id}')">
+      <div class="top">
+        <div class="row" style="align-items:flex-start">
+          <div class="avatar" style="width:42px;height:42px;border-radius:50%;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700">${initials(c.name)}</div>
+          <div><div class="nm">${esc(c.name)}</div><div class="meta">${esc(c.field)} · ${esc(c.location)}</div></div>
+        </div>
+        <span class="badge interview">${apps.length} application${apps.length===1?'':'s'}</span>
+      </div>
+      ${apps.length?`<div class="apps">${apps.map(a=>`<span>${esc(job(a.job).title)} — ${badge(a.stage)}</span>`).join("")}</div>`:""}
+    </div>`;
+  }).join("") || `<p class="muted">No candidates match.</p>`}
+  `;
+}
+
+/* ================= CANDIDATE PROFILE ================= */
+function viewCandidateProfile(seg){
+  const c = cand(seg[0]); if(!c) return "<p>Candidate not found.</p>";
+  const apps = applications.filter(a=>a.cand===c.id);
+  return `
+  <div class="breadcrumb"><button onclick="navigate('#/candidates')">Candidates</button> / ${esc(c.name)}</div>
+  <div class="row mb16" style="gap:14px">
+    <div style="width:56px;height:56px;border-radius:50%;background:var(--primary-soft);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px">${initials(c.name)}</div>
+    <div><h1>${esc(c.name)}</h1><p class="muted" style="font-size:13px">${esc(c.field)} · ${esc(c.location)}</p></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <div class="detail-block"><h3>Contact</h3><dl class="kv"><dt>Email</dt><dd>${esc(c.email)}</dd><dt>Phone</dt><dd>${esc(c.phone)}</dd></dl></div>
+      <div class="detail-block"><h3>Resume</h3><p class="muted">📄 ${esc(c.name.split(" ")[0].toLowerCase())}_resume.pdf &nbsp;<button class="linkbtn" onclick="toast('Resume preview not available in prototype')">View</button></p></div>
+      <div class="detail-block"><h3>Skills</h3><p style="line-height:1.7">${esc(c.skills)}</p></div>
+    </div>
+    <div>
+      <div class="detail-block"><h3>Experience</h3><p style="white-space:pre-line; line-height:1.7">${esc(c.experience)}</p></div>
+      <div class="detail-block"><h3>Education</h3><p style="line-height:1.6">${esc(c.education)}</p></div>
+    </div>
+  </div>
+  <h2>Application History</h2>
+  ${apps.map(a=>`
+    <div class="entry">
+      <div class="top">
+        <div><div class="nm">${esc(job(a.job).title)}</div><div class="meta">Applied ${esc(a.applied)} · ${esc(job(a.job).location)} · ${esc(job(a.job).type)}</div></div>
+        <div class="row">
+          ${badge(a.stage)}
+          <button class="btn sm" onclick="navigate('#/jobs/${a.job}?tab=pipeline')">View in Pipeline</button>
+        </div>
+      </div>
+    </div>`).join("") || `<p class="muted">No applications yet.</p>`}
+  `;
+}
+
+/* ================= INTERVIEWS ================= */
+const IV_TABS = [
+  {key:"upcoming", label:"Upcoming"},
+  {key:"needs-scheduling", label:"Needs Scheduling"},
+  {key:"feedback-pending", label:"Feedback Pending"},
+  {key:"completed", label:"Completed"},
+];
+function viewInterviews(seg, params){
+  const tab = params.tab || "upcoming";
+  const list = interviews.filter(i=>i.status===tab);
+  return `
+  <h1>Interviews</h1>
+  <p class="sub">All interview rounds across every job opening.</p>
+  <div class="tabs">
+    ${IV_TABS.map(t=>`<button class="tab ${t.key===tab?'active':''}" onclick="navigate('#/interviews?tab=${t.key}')">${t.label}<span class="cnt">${interviews.filter(i=>i.status===t.key).length}</span></button>`).join("")}
+  </div>
+  ${list.map(i=>{
+    const a = app(i.app); if(!a) return "";
+    const c = cand(a.cand), j = job(a.job);
+    return `<div class="entry clickable" onclick="navigate('#/interview/${i.id}')">
+      <div class="top">
+        <div class="row" style="align-items:flex-start">
+          <div style="width:42px;height:42px;border-radius:50%;background:var(--blue-bg);color:var(--blue);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">${initials(c.name)}</div>
+          <div>
+            ${i.time!=="—"?`<div class="meta" style="font-weight:700;color:var(--primary)">${i.time.split(" – ")[0]} · ${esc(i.date)}</div>`:""}
+            <div class="nm">${esc(j.title)}</div>
+            <div class="meta">${esc(c.name)} · ${esc(i.round)} · Interviewer: ${esc(i.interviewer)}</div>
+          </div>
+        </div>
+        <div class="row">
+          ${badge(i.status.replace(/-/g," "))}
+          ${i.status==="feedback-pending"?`<button class="btn sm primary" onclick="event.stopPropagation(); navigate('#/interview/${i.id}?focus=feedback')">Give Feedback</button>`:""}
+          ${i.status==="needs-scheduling"?`<button class="btn sm" onclick="event.stopPropagation(); navigate('#/interview/${i.id}?focus=schedule')">Schedule</button>`:""}
+        </div>
+      </div>
+    </div>`;
+  }).join("") || `<p class="muted">Nothing here.</p>`}
+  `;
+}
+
+/* ================= INTERVIEW DETAIL ================= */
+function viewInterviewDetail(seg, params){
+  const i = interview(seg[0]); if(!i) return "<p>Interview not found.</p>";
+  const a = app(i.app); const c = cand(a.cand); const j = job(a.job);
+  const others = interviews.filter(x=>x.app===i.app && x.id!==i.id);
+  return `
+  <div class="breadcrumb"><button onclick="navigate('#/interviews')">Interviews</button> / ${esc(i.round)}</div>
+  <h1>Interview Detail</h1>
+  <p class="sub">${esc(j.title)} · ${esc(c.name)}</p>
+
+  ${params.focus==="schedule" && i.status==="needs-scheduling" ? `
+    <div class="detail-block" style="border-color:#c7d2fe">
+      <h3>Schedule Interview</h3>
+      <div class="grid2">
+        <div class="field"><label>Date</label><input type="text" id="sch-date" placeholder="e.g. October 2, 2026"></div>
+        <div class="field"><label>Time</label><input type="text" id="sch-time" placeholder="e.g. 10:00 – 11:00"></div>
+      </div>
+      <button class="btn primary" onclick="scheduleInterview('${i.id}')">Confirm Schedule</button>
+    </div>`:""}
+
+  <div class="grid2">
+    <div class="detail-block"><h3>When</h3>
+      <p style="line-height:1.7">${i.time==="—" ? '<span class="muted">Not scheduled yet</span>' : "<b>"+esc(i.time)+"</b><br>"+esc(i.date)}</p>
+      <p class="mt8">${esc(i.round)}</p>
+    </div>
+    <div class="detail-block"><h3>Status</h3><p>${badge(i.status.replace(/-/g," "))}</p>
+      <p class="muted mt8" style="font-size:13px">Interviewer: ${esc(i.interviewer)}</p>
+    </div>
+  </div>
+
+  <div class="detail-block"><h3>Actions</h3>
+    <div class="row">
+      ${i.status==="upcoming"?`<button class="btn primary" onclick="toast('Meeting link placeholder')">Join Meeting</button>`:""}
+      <button class="btn" onclick="navigate('#/candidates/${c.id}')">View Candidate</button>
+      <button class="btn" onclick="navigate('#/jobs/${j.id}?tab=pipeline')">View Application (Pipeline)</button>
+    </div>
+  </div>
+
+  ${others.length?`
+  <div class="detail-block"><h3>Other interviews for this application</h3>
+    ${others.map(o=>`<div class="check"><span class="box ${o.status==='completed'?'done':''}" style="${o.status==='completed'?'background:var(--green);border-color:var(--green)':''}">${o.status==='completed'?'✓':''}</span>
+      <span class="txt">${esc(o.round)} — ${badge(o.status.replace(/-/g," "))}</span>
+      <button class="linkbtn" style="margin-left:auto" onclick="navigate('#/interview/${o.id}')">Open</button></div>`).join("")}
+  </div>`:""}
+
+  ${i.status==="feedback-pending" || i.status==="completed" ? `
+    <div class="detail-block" id="feedback" style="${params.focus==='feedback'?'border:2px solid var(--primary)':''}">
+      <h3>Interview Feedback ${i.status==="completed"?"(submitted)":""}</h3>
+      ${i.status==="completed" && i.feedback ? `
+        <dl class="kv">
+          <dt>Rating</dt><dd style="color:var(--primary); letter-spacing:3px">${"★".repeat(i.feedback.rating)}${"☆".repeat(5-i.feedback.rating)}</dd>
+          <dt>Recommendation</dt><dd>${esc(i.feedback.rec)}</dd>
+          <dt>Notes</dt><dd>${esc(i.feedback.notes)}</dd>
+        </dl>` : `
+        <label class="muted" style="font-size:12px; font-weight:600">Rating</label>
+        <div class="rating" id="fb-rating">
+          ${[1,2,3,4,5].map(n=>`<button onclick="setRating(${n})">${n}</button>`).join("")}
+        </div>
+        <label class="muted" style="font-size:12px; font-weight:600">Recommendation</label>
+        <div class="radio-row">
+          ${["Strong Yes","Yes","No","Strong No"].map((r,idx)=>`<label><input type="radio" name="fb-rec" value="${r}" ${idx===1?'checked':''}> ${r}</label>`).join("")}
+        </div>
+        <div class="field"><label>Notes</label><textarea id="fb-notes" placeholder="What went well? Any concerns?"></textarea></div>
+        <div class="row">
+          <button class="btn primary" onclick="submitFeedback('${i.id}')">Submit Feedback</button>
+          <button class="btn danger" onclick="rejectApplication('${i.app}')">Reject Candidate</button>
+        </div>`}
+    </div>`:""}
+  `;
+}
+let fbRating = 0;
+function setRating(n){
+  fbRating = n;
+  document.querySelectorAll("#fb-rating button").forEach((b,idx)=>b.classList.toggle("on", idx<n));
+}
+function scheduleInterview(id){
+  const i = interview(id);
+  const d = $("#sch-date").value.trim() || "October 2, 2026";
+  const t = $("#sch-time").value.trim() || "10:00 – 11:00";
+  i.date = d; i.time = t; i.status = "upcoming";
+  toast("Interview scheduled");
+  render();
+}
+function submitFeedback(id){
+  const i = interview(id);
+  const rec = document.querySelector('input[name="fb-rec"]:checked')?.value || "Yes";
+  i.feedback = {rating: fbRating||3, rec, notes: $("#fb-notes").value || "—"};
+  i.status = "completed";
+  fbRating = 0;
+  toast("Feedback submitted");
+  render();
+}
+function rejectApplication(appId){
+  const a = app(appId);
+  a.stage = "Rejected";
+  interviews.filter(x=>x.app===appId && x.status!=="completed").forEach(x=>x.status="completed");
+  toast(cand(a.cand).name + " rejected for " + job(a.job).title);
+  navigate("#/jobs/"+a.job+"?tab=pipeline");
+}
+
+/* ================= OFFERS ================= */
+const OFFER_TABS = [
+  {key:"pending-approval", label:"Pending Approval"},
+  {key:"sent", label:"Sent"},
+  {key:"accepted", label:"Accepted"},
+  {key:"declined", label:"Declined"},
+];
+function viewOffers(seg, params){
+  const tab = params.tab || "pending-approval";
+  const list = offers.filter(o=>o.status===tab);
+  return `
+  <h1>Offers</h1>
+  <p class="sub">Approval → Send → Candidate decision → Onboarding.</p>
+  <div class="tabs">
+    ${OFFER_TABS.map(t=>`<button class="tab ${t.key===tab?'active':''}" onclick="navigate('#/offers?tab=${t.key}')">${t.label}<span class="cnt">${offers.filter(o=>o.status===t.key).length}</span></button>`).join("")}
+  </div>
+  ${list.map(o=>{
+    const a = app(o.app); if(!a) return "";
+    const c = cand(a.cand), j = job(a.job);
+    return `<div class="entry clickable" onclick="navigate('#/offers/${o.id}')">
+      <div class="top">
+        <div class="row" style="align-items:flex-start">
+          <div style="width:42px;height:42px;border-radius:50%;background:var(--green-bg);color:var(--green);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px">${initials(c.name)}</div>
+          <div><div class="nm">${esc(c.name)}</div><div class="meta">${esc(j.title)} · ${esc(o.salary)} · Start: ${esc(o.startDate)}</div></div>
+        </div>
+        <div class="row">
+          ${badge(o.status.replace(/-/g," "))}
+          <button class="btn sm" onclick="event.stopPropagation(); navigate('#/offers/${o.id}')">Review Offer</button>
+        </div>
+      </div>
+    </div>`;
+  }).join("") || `<p class="muted">No offers in this state.</p>`}
+  `;
+}
+
+/* ================= OFFER DETAIL ================= */
+function viewOfferDetail(seg){
+  const o = offer(seg[0]); if(!o) return "<p>Offer not found.</p>";
+  const a = app(o.app); const c = cand(a.cand); const j = job(a.job);
+  const editable = o.status==="pending-approval";
+  return `
+  <div class="breadcrumb"><button onclick="navigate('#/offers')">Offers</button> / ${esc(c.name)}</div>
+  <h1>Offer Detail</h1>
+  <p class="sub">${badge(o.status.replace(/-/g," "))}</p>
+
+  <div class="grid2">
+    <div class="detail-block"><h3>Candidate & Position</h3>
+      <dl class="kv">
+        <dt>Candidate</dt><dd><button class="linkbtn" style="font-size:13.5px" onclick="navigate('#/candidates/${c.id}')">${esc(c.name)}</button></dd>
+        <dt>Position</dt><dd>${esc(j.title)}</dd>
+        <dt>Application</dt><dd><button class="linkbtn" style="font-size:13.5px" onclick="navigate('#/jobs/${j.id}?tab=pipeline')">View in Pipeline</button></dd>
+      </dl>
+    </div>
+    <div class="detail-block"><h3>Compensation</h3>
+      ${editable?`
+        <div class="field"><label>Salary</label><input type="text" id="off-salary" value="${esc(o.salary)}"></div>
+        <div class="field"><label>Start Date</label><input type="text" id="off-start" value="${esc(o.startDate)}"></div>
+        <div class="field"><label>Benefits</label><textarea id="off-benefits">${esc(o.benefits)}</textarea></div>`
+      :`<dl class="kv"><dt>Salary</dt><dd><b>${esc(o.salary)}</b></dd><dt>Start Date</dt><dd>${esc(o.startDate)}</dd><dt>Benefits</dt><dd style="white-space:pre-line; line-height:1.6">${esc(o.benefits)}</dd></dl>`}
+    </div>
+  </div>
+
+  <div class="detail-block"><h3>Workflow</h3>
+    <p class="muted" style="font-size:12.5px">Approved → Send Offer → Candidate Decision → Accepted / Declined → Onboarding</p>
+    <div class="row mt8">
+      ${o.status==="pending-approval"?`
+        ${editable?`<button class="btn sm" onclick="saveOffer('${o.id}')">Save Changes</button>`:""}
+        <button class="btn primary" onclick="approveOffer('${o.id}')">Approve</button>
+        <button class="btn danger" onclick="rejectOffer('${o.id}')">Reject</button>`:""}
+      ${o.status==="approved"?`<button class="btn primary" onclick="sendOffer('${o.id}')">Send Offer</button>`:""}
+      ${o.status==="sent"?`
+        <span class="muted">Waiting for candidate decision…</span>
+        <button class="btn primary" onclick="decideOffer('${o.id}','accepted')">Mark Accepted</button>
+        <button class="btn danger" onclick="decideOffer('${o.id}','declined')">Mark Declined</button>`:""}
+      ${o.status==="accepted"?`<button class="btn primary" onclick="navigate('#/onboarding')">Go to Onboarding →</button>`:""}
+      ${o.status==="declined"?`<span class="muted">Offer declined by candidate.</span>`:""}
+    </div>
+  </div>
+  `;
+}
+function saveOffer(id){
+  const o = offer(id);
+  o.salary = $("#off-salary").value; o.startDate = $("#off-start").value; o.benefits = $("#off-benefits").value;
+  toast("Offer updated"); render();
+}
+function approveOffer(id){ offer(id).status="approved"; toast("Offer approved — ready to send"); render(); }
+function rejectOffer(id){
+  const o = offer(id); o.status="declined";
+  app(o.app).stage = "Rejected";
+  toast("Offer rejected"); navigate("#/offers?tab=declined");
+}
+function sendOffer(id){ offer(id).status="sent"; toast("Offer sent to candidate"); render(); }
+function decideOffer(id, decision){
+  const o = offer(id); o.status = decision;
+  const a = app(o.app);
+  if(decision==="accepted"){
+    a.stage = "Hired";
+    onboardings.push({id:"n"+(nextOfferId++), offer:o.id,
+      steps:{accepted:true, documents:false, background:false, equipment:false, email:false, access:false, orientation:false, ready:false}});
+    toast("Offer accepted — onboarding created");
+  } else {
+    a.stage = "Rejected";
+    toast("Offer declined");
+  }
+  render();
+}
+
+/* ================= ONBOARDING ================= */
+const OB_STEPS = [
+  {key:"accepted", label:"Offer Accepted"},
+  {key:"documents", label:"Documents Submitted"},
+  {key:"background", label:"Background Check"},
+  {key:"equipment", label:"Equipment Prepared"},
+  {key:"email", label:"Email Account Created"},
+  {key:"access", label:"System Access"},
+  {key:"orientation", label:"Orientation Scheduled"},
+  {key:"ready", label:"Ready to Start"},
+];
+function viewOnboarding(){
+  return `
+  <h1>Onboarding</h1>
+  <p class="sub">Candidates who accepted their offer — tracking the transition to employee.</p>
+  ${onboardings.map(n=>{
+    const o = offer(n.offer); const a = app(o.app); const c = cand(a.cand); const j = job(a.job);
+    const done = OB_STEPS.filter(s=>n.steps[s.key]).length;
+    const pct = Math.round(done/OB_STEPS.length*100);
+    return `<div class="card mb16">
+      <div class="row" style="justify-content:space-between; align-items:flex-start">
+        <div class="row" style="align-items:flex-start; gap:14px">
+          <div style="width:46px;height:46px;border-radius:50%;background:var(--green-bg);color:var(--green);display:flex;align-items:center;justify-content:center;font-weight:700">${initials(c.name)}</div>
+          <div>
+            <div style="font-weight:700; font-size:15.5px">${esc(c.name)}</div>
+            <div class="meta muted" style="font-size:12.5px; margin-top:2px">${esc(j.title)} · Start Date: ${esc(o.startDate)}</div>
+          </div>
+        </div>
+        <div style="text-align:right">
+          ${badge(pct===100 ? "Completed" : pct+"% Complete")}
+          <div class="mt8"><button class="linkbtn" onclick="navigate('#/candidates/${c.id}')">View Candidate</button></div>
+        </div>
+      </div>
+      <div class="grid2 mt16">
+        ${OB_STEPS.map(s=>`
+          <div class="check ${n.steps[s.key]?'done':''}" style="cursor:pointer" onclick="toggleOB('${n.id}','${s.key}')">
+            <span class="box">${n.steps[s.key]?'✓':''}</span><span class="txt">${s.label}</span>
+          </div>`).join("")}
+      </div>
+      <div class="progress"><div style="width:${pct}%"></div></div>
+    </div>`;
+  }).join("") || `<p class="muted">No one is onboarding yet. Accepted offers appear here automatically.</p>`}
+  `;
+}
+function toggleOB(nid, key){
+  const n = onboardings.find(x=>x.id===nid);
+  n.steps[key] = !n.steps[key];
+  render();
+}
+
+/* ================= CALENDAR ================= */
+function viewCalendar(){
+  // September 2026: Sep 1 = Tuesday. Week rows Mon–Fri.
+  const days = [
+    {d:1, evs:[]},{d:2, evs:[]},{d:3, evs:[]},{d:4, evs:[]},
+    {d:7, evs:[]},{d:8, evs:[]},{d:9, evs:[]},{d:10, evs:[]},{d:11, evs:[]},
+    {d:14, evs:[]},{d:15, evs:[]},{d:16, evs:[]},{d:17, evs:[]},{d:18, evs:[]},
+    {d:21, evs:[]},{d:22, evs:[{t:"13:00", l:"Interview #2 — Hiring Manager", i:"i10"}]},
+    {d:23, evs:[]},{d:24, evs:[]},{d:25, evs:[{t:"10:00", l:"HR Interview — Raphael N.", i:"i7"}]},
+    {d:28, evs:[{t:"15:00", l:"Screening Call — Sarah Lee", i:"i8"}]},
+    {d:29, evs:[
+      {t:"09:00", l:"Product Analyst — Raphael N.", i:"i1"},
+      {t:"11:00", l:"Software Engineer — Sarah Lee", i:"i2"},
+      {t:"14:00", l:"Marketing Specialist — John Tan", i:"i3"},
+      {t:"16:00", l:"Hiring Manager Review", i:"i4"},
+    ]},
+    {d:30, evs:[{t:"09:00", l:"HR Interview — John Tan", i:"i9"}]},
+  ];
+  const cell = (day, isBlank)=> isBlank
+    ? `<div class="cal-cell" style="background:#e9edf3; border-style:dashed; box-shadow:none"></div>`
+    : `<div class="cal-cell ${day.d===29?'today':''}">
+        <div class="day">${day.d}${day.d===29?' · Today':''}</div>
+        ${day.evs.map(e=>`<button class="cal-ev" onclick="navigate('#/interview/${e.i}')"><b>${e.t}</b>${esc(e.l)}</button>`).join("")}
+       </div>`;
+  return `
+  <div class="pagehead">
+    <div><h1>Calendar</h1><p class="sub" style="margin-bottom:0">Time-based view of recruitment activity — interviews, reviews and candidate meetings.</p></div>
+    <div class="row"><button class="btn sm">‹</button><b style="font-size:15px">September 2026</b><button class="btn sm">›</button></div>
+  </div>
+  <div class="cal-grid mt16">
+    ${["Mon","Tue","Wed","Thu","Fri"].map(d=>`<div class="cal-head">${d}</div>`).join("")}
+    ${cell(null,true)}${days.slice(0,4).map(d=>cell(d)).join("")}
+    ${days.slice(4,9).map(d=>cell(d)).join("")}
+    ${days.slice(9,14).map(d=>cell(d)).join("")}
+    ${days.slice(14,19).map(d=>cell(d)).join("")}
+    ${days.slice(19,22).map(d=>cell(d)).join("")}${cell(null,true)}${cell(null,true)}
+  </div>
+  <div class="card mt16"><h3 style="font-size:11px; letter-spacing:1.3px; text-transform:uppercase; color:var(--ink-faint); margin-bottom:10px; font-weight:700">Unscheduled — needs attention</h3>
+    ${interviews.filter(i=>i.status==="needs-scheduling").map(i=>{
+      const a = app(i.app);
+      return `<div class="check"><span class="box"></span><span class="txt">${esc(i.round)} — ${esc(cand(a.cand).name)} · ${esc(job(a.job).title)}</span>
+        <button class="linkbtn" style="margin-left:auto" onclick="navigate('#/interview/${i.id}?focus=schedule')">Schedule →</button></div>`;
+    }).join("") || `<p class="muted" style="font-size:12.5px">All interviews are scheduled.</p>`}
+  </div>
+  `;
+}
+
+/* sidebar click handlers */
+document.querySelectorAll(".nav-item[data-route]").forEach(b=>{
+  b.addEventListener("click", ()=>navigate("#/"+b.dataset.route));
+});
+</script>
+</body>
+</html>

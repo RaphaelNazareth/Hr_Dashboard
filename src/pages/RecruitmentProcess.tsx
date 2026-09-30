@@ -13,7 +13,6 @@ import {
   Draggable,
   type DropResult,
 } from "@hello-pangea/dnd";
-import { Header } from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -238,17 +237,17 @@ export const RecruitmentBoard: FC = () => {
 
   // "Schedule interview" dialog state — shown after dropping a candidate
   // into any stage whose name contains "interview".
-  const [interviewPrompt, setInterviewPrompt] = useState<InterviewPrompt | null>(null);
+  // Using a queue allows handling bulk moves one candidate at a time.
+  const [interviewQueue, setInterviewQueue] = useState<InterviewPrompt[]>([]);
   const [interviewDateTime, setInterviewDateTime] = useState("");
   const [interviewNotes, setInterviewNotes] = useState("");
   const [schedulingInterview, setSchedulingInterview] = useState(false);
-
-  // Horizontal-scroll slider for the pipeline.
-  const pipelineScrollRef = useRef<HTMLDivElement>(null);
-  const [scrollMax, setScrollMax] = useState(0);
-  const [scrollValue, setScrollValue] = useState(0);
   const [interviewEndTime, setInterviewEndTime] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
+
+  // Scroll slider state for horizontal pipeline scrolling
+  const [scrollValue, setScrollValue] = useState(0);
+  const [scrollMax, setScrollMax] = useState(0);
 
   // Bulk selection state — shared across every stage.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -489,12 +488,8 @@ export const RecruitmentBoard: FC = () => {
       });
 
       if (isInterviewStage(destStage.name)) {
-        // Hold off on the tracking / interview_schedule entries until we
-        // know when the interview is scheduled for.
-        setInterviewDateTime("");
-        setInterviewEndTime("");
-        setInterviewNotes("");
-        setInterviewPrompt({ candidate: movingCandidate, stageName: destStage.name });
+        // Queue the interview prompt - it will show for one candidate at a time
+        enqueueInterviews([{ candidate: movingCandidate, stageName: destStage.name }]);
       } else {
         logTrackingEvent({
           candidateId: movingCandidate.id,
@@ -533,6 +528,11 @@ export const RecruitmentBoard: FC = () => {
           next[destId] = [...succeeded, ...(next[destId] ?? [])];
           return next;
         });
+
+        // Add interview prompts for bulk moves to interview stages
+        if (isInterviewStage(bulkStageTarget)) {
+          enqueueInterviews(succeeded.map((candidate) => ({ candidate, stageName: bulkStageTarget })));
+        }
       }
 
       if (failed.length) {
@@ -545,6 +545,40 @@ export const RecruitmentBoard: FC = () => {
   }
 
   // -- Interview scheduling prompt -----------------------------------------
+  // Helper functions for interview queue
+  const interviewPrompt = interviewQueue[0] ?? null;
+
+  function enqueueInterviews(items: InterviewPrompt[]) {
+    setInterviewDateTime("");
+    setInterviewEndTime("");
+    setInterviewNotes("");
+    setInterviewQueue((q) => [...q, ...items]);
+  }
+
+  function closeInterviewPrompt() {
+    setInterviewDateTime("");
+    setInterviewEndTime("");
+    setInterviewNotes("");
+    setInterviewQueue((q) => q.slice(1));
+  }
+
+  async function handleSkipInterview() {
+    if (!interviewPrompt) return;
+    const { candidate, stageName } = interviewPrompt;
+    try {
+      await logTrackingEvent({
+        candidateId: candidate.id,
+        stage: stageName,
+        date: new Date().toISOString(),
+        notes: "Interview time not scheduled yet.",
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Couldn't record that stage change in the candidate's history.");
+    }
+    closeInterviewPrompt();
+  }
+
   function buildInterviewNotes(baseNotes: string) {
     if (!interviewDateTime) return baseNotes;
     const startLabel = new Date(interviewDateTime).toLocaleTimeString([], {
@@ -593,26 +627,21 @@ export const RecruitmentBoard: FC = () => {
   async function handleConfirmInterview(e: FormEvent) {
     e.preventDefault();
     if (!interviewPrompt) return;
+    if (!interviewDateTime) {
+      setError("Please provide an interview date and time.");
+      return;
+    }
 
     setSchedulingInterview(true);
     try {
       await persistInterview();
-      setInterviewPrompt(null);
+      closeInterviewPrompt(); // Close the dialog after successful save
     } catch (err) {
       console.error("Failed to schedule interview", err);
       setError("Couldn't save the interview time — please try again from the profile.");
     } finally {
       setSchedulingInterview(false);
     }
-  }
-
-  function handleSkipInterviewTime() {
-    if (!interviewPrompt) return;
-    persistInterview().catch((err) => {
-      console.error("Failed to log tracking event", err);
-      setError("Couldn't record that stage change in the candidate's history.");
-    });
-    setInterviewPrompt(null);
   }
 
   function handleAddToGoogleCalendar() {
@@ -631,7 +660,7 @@ export const RecruitmentBoard: FC = () => {
   }
 
   async function handleSendInterviewEmail() {
-    if (!interviewPrompt) return;
+    if (!interviewPrompt || !interviewDateTime) return;
     const { candidate, stageName } = interviewPrompt;
 
     if (!candidate.email) {
@@ -839,7 +868,6 @@ export const RecruitmentBoard: FC = () => {
 
   return (
     <>
-      <Header />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -1364,12 +1392,11 @@ export const RecruitmentBoard: FC = () => {
       </Dialog>
 
       {/* Schedule interview dialog — shown when a candidate is dropped into
-          any stage whose name contains "interview". Confirming writes both
-          a candidate_tracking row and an interview_schedule row. */}
+          any stage whose name contains "interview". */}
       <Dialog
         open={!!interviewPrompt}
         onOpenChange={(open) => {
-          if (!open) handleSkipInterviewTime();
+          if (!open) void handleSkipInterview();
         }}
       >
         <DialogContent className="max-w-md">
@@ -1381,24 +1408,53 @@ export const RecruitmentBoard: FC = () => {
             <DialogDescription>
               {interviewPrompt && (
                 <>
-                  {interviewPrompt.candidate.first_name} {interviewPrompt.candidate.last_name} was
-                  moved to <span className="font-medium">{interviewPrompt.stageName}</span>. When is
-                  it scheduled for?
+                  {interviewPrompt.candidate.first_name} {interviewPrompt.candidate.last_name} was moved to{" "}
+                  <span className="font-medium">{interviewPrompt.stageName}</span>. When is it scheduled for?
                 </>
               )}
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleConfirmInterview} className="space-y-4">
-            <Field label="Start" htmlFor="interviewDateTime">
+            <Field label="Date (dd/mm/yyyy)" htmlFor="interviewDate">
               <Input
-                id="interviewDateTime"
-                type="datetime-local"
-                value={interviewDateTime}
-                onChange={(e) => setInterviewDateTime(e.target.value)}
+                id="interviewDate"
+                type="date"
+                value={interviewDateTime ? interviewDateTime.slice(0, 10) : ""}
+                onChange={(e) => {
+                  const dateStr = e.target.value;
+                  if (dateStr && interviewDateTime) {
+                    const timeStr = interviewDateTime.slice(11);
+                    setInterviewDateTime(`${dateStr}T${timeStr}`);
+                  } else if (dateStr) {
+                    setInterviewDateTime(`${dateStr}T09:00`);
+                  } else {
+                    setInterviewDateTime("");
+                  }
+                }}
               />
             </Field>
-            <Field label="End time" htmlFor="interviewEndTime" hint="optional">
+
+            <Field label="Start Time" htmlFor="interviewTime">
+              <Input
+                id="interviewTime"
+                type="time"
+                value={interviewDateTime ? interviewDateTime.slice(11, 16) : ""}
+                onChange={(e) => {
+                  const timeStr = e.target.value;
+                  if (timeStr && interviewDateTime) {
+                    const dateStr = interviewDateTime.slice(0, 10);
+                    setInterviewDateTime(`${dateStr}T${timeStr}`);
+                  } else if (timeStr) {
+                    setInterviewDateTime(`2026-01-01T${timeStr}`);
+                  } else {
+                    setInterviewDateTime("");
+                  }
+                }}
+              />
+            </Field>
+
+            <Field label="End Time" htmlFor="interviewEndTime" hint="Optional">
               <Input
                 id="interviewEndTime"
                 type="time"
@@ -1447,12 +1503,12 @@ export const RecruitmentBoard: FC = () => {
               <Button
                 type="button"
                 variant="ghost"
-                onClick={handleSkipInterviewTime}
+                onClick={handleSkipInterview}
                 disabled={schedulingInterview}
               >
                 Skip for now
               </Button>
-              <Button type="submit" className="gap-2" disabled={schedulingInterview}>
+              <Button type="submit" className="gap-2" disabled={schedulingInterview || !interviewDateTime}>
                 {schedulingInterview && <Loader2 className="h-4 w-4 animate-spin" />}
                 Save time
               </Button>

@@ -432,9 +432,33 @@ export async function createCandidate(input: NewCandidateInput): Promise<Candida
   return data as CandidateRecord;
 }
 
+// Create an employee record from a hired candidate
+export async function createEmployeeFromCandidate(
+  candidate: CandidateRecord
+): Promise<void> {
+  const { error } = await supabase.from("employees").insert({
+    candidate_id: candidate.id,
+    full_name: candidate.first_name + (candidate.last_name ? " " + candidate.last_name : ""),
+    email: candidate.email,
+    phone: candidate.phone_number,
+    job_title: candidate.applied_position ?? "",
+    department: null,
+    employment_type: "Full-time",
+    start_date: new Date().toISOString().slice(0, 10),
+    status: "Active",
+    employee_number: `EMP-${Date.now()}`,
+  });
+
+  if (error) {
+    console.error("Failed to create employee from candidate", candidate.id, error);
+    throw error;
+  }
+}
+
 // Bulk move used by the multi-select toolbar. Updates `status` for every
 // candidate, then best-effort logs a tracking entry for each one — a failed
 // history log never rolls back the status move itself.
+// When a candidate is moved to "Hired", also creates an employee record.
 export async function moveCandidates(candidates: CandidateRecord[], targetStatus: string) {
   const succeeded: CandidateRecord[] = [];
   const failed: CandidateRecord[] = [];
@@ -443,6 +467,16 @@ export async function moveCandidates(candidates: CandidateRecord[], targetStatus
     try {
       const updated = await updateCandidateStatus(candidate.id, targetStatus);
       succeeded.push(updated);
+      
+      // If moved to Hired, create an employee record
+      if (targetStatus === "Hired") {
+        try {
+          await createEmployeeFromCandidate(updated);
+        } catch (err) {
+          console.error("Status moved but employee creation failed", err);
+        }
+      }
+      
       try {
         await logTrackingEvent({
           candidateId: candidate.id,

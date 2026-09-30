@@ -1,4 +1,3 @@
-import { Header } from '@/components/Header';
 import { PageWrapper } from '@/components/PageWrapper';
 import { useState, useEffect, useMemo, type FC } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -421,7 +420,7 @@ export const Candidates: FC = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
+      
 
       <PageWrapper className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
         <div className="mb-6">
