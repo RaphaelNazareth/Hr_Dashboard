@@ -112,15 +112,26 @@ export async function saveProcess(input: ProcessDraft): Promise<string> {
   }
 
   // 3. Upsert stages in their new order.
-  const rows = input.stages.map((s, i) => ({
-    ...(s.id ? { id: s.id } : {}),
-    process_id: processId,
-    name: s.name.trim(),
-    position: i,
-    is_interview: s.is_interview,
-  }));
-  const { error: stageErr } = await supabase.from("hiring_process_stages").upsert(rows);
-  if (stageErr) throw stageErr;
+  // 3. Update existing stages, insert new ones (new rows must not carry an id).
+    const rows = input.stages.map((s, i) => ({
+      id: s.id,
+      process_id: processId,
+      name: s.name.trim(),
+      position: i,
+      is_interview: s.is_interview,
+    }));
+
+    const existingRows = rows.filter((r) => r.id) as (typeof rows[number] & { id: string })[];
+    const newRows = rows.filter((r) => !r.id).map(({ id: _id, ...rest }) => rest);
+
+    if (existingRows.length) {
+      const { error: updErr } = await supabase.from("hiring_process_stages").upsert(existingRows);
+      if (updErr) throw updErr;
+    }
+    if (newRows.length) {
+      const { error: insErr } = await supabase.from("hiring_process_stages").insert(newRows);
+      if (insErr) throw insErr;
+    }
 
   return processId;
 }

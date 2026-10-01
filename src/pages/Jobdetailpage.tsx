@@ -21,7 +21,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import {
@@ -44,6 +43,10 @@ import {
   CalendarClock,
   CalendarPlus,
   Send,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  ArrowUpDown,
 } from "lucide-react";
 import {
   DEFAULT_STAGE_NAMES,
@@ -54,6 +57,7 @@ import {
   fetchTrackingHistory,
   addCandidateNote,
   createInterviewSchedule,
+  updateJob,
   matchesCandidateSearch,
   NOTE_STAGE,
   isInterviewStage,
@@ -62,9 +66,29 @@ import type {
   JobRecord,
   CandidateRecord,
   TrackingRecord,
+  NewJobInput,
 } from "@/lib/candidateBoard";
 
+// ---------------------------------------------------------------------------
+// AI Analysis type
+// ---------------------------------------------------------------------------
+interface AiAnalysis {
+  id: string;
+  candidate_id: string;
+  job_id: string | null;
+  score: number | null;
+  recommendation: "strong_fit" | "potential_fit" | "weak_fit" | null;
+  summary: string | null;
+  strengths: string[];
+  concerns: string[];
+  status: "pending" | "completed" | "failed";
+  error: string | null;
+  model: string | null;
+  created_at: string;
+}
+
 type ViewMode = "profile" | "kanban";
+type SortMode = "default" | "score_desc" | "score_asc";
 
 function initials(first: string, last: string) {
   return `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase();
@@ -84,6 +108,19 @@ function formatDateTime(iso: string) {
 
 function uniqueSorted(values: (string | null | undefined)[]) {
   return Array.from(new Set(values.filter(Boolean))).sort() as string[];
+}
+
+function parseList(value: unknown): string[] {
+  if (Array.isArray(value)) return value as string[];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 function statusClass(status: string) {
@@ -121,6 +158,7 @@ export const JobDetailPage: FC = () => {
   const [view, setView] = useState<ViewMode>("profile");
   const [query, setQuery] = useState("");
   const [stageTab, setStageTab] = useState<string>("All");
+  const [sortBy, setSortBy] = useState<SortMode>("default");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [showFilters, setShowFilters] = useState(false);
@@ -154,6 +192,16 @@ export const JobDetailPage: FC = () => {
   const [onbNotes, setOnbNotes] = useState("");
   const [savingOnboarding, setSavingOnboarding] = useState(false);
 
+  // Edit mode state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState<Partial<NewJobInput>>({});
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // AI analyses, keyed by candidate_id (used for score badges, sorting and the detail card)
+  const [aiScores, setAiScores] = useState<Record<string, AiAnalysis>>({});
+  const [loadingAi, setLoadingAi] = useState(false);
+
   // -- Load job + its candidates --------------------------------------------
   useEffect(() => {
     let cancelled = false;
@@ -183,6 +231,36 @@ export const JobDetailPage: FC = () => {
         if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId]);
+
+  // -- Load AI analyses for all candidates in this job ----------------------
+  useEffect(() => {
+    if (!jobId) return;
+    let cancelled = false;
+    setLoadingAi(true);
+    supabase
+      .from("candidate_ai_analyses")
+      .select("*")
+      .eq("job_id", jobId)
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const map: Record<string, AiAnalysis> = {};
+        for (const row of data) {
+          const r = row as any;
+          map[r.candidate_id] = {
+            ...r,
+            strengths: parseList(r.strengths),
+            concerns: parseList(r.concerns),
+          };
+        }
+        setAiScores(map);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAi(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -232,14 +310,25 @@ export const JobDetailPage: FC = () => {
     return map;
   }, [searched]);
 
-  const visible = useMemo(
-    () => (stageTab === "All" ? searched : searched.filter((c) => c.status === stageTab)),
-    [searched, stageTab]
-  );
+  // Candidates without a score always sink to the bottom, in both directions.
+  const visible = useMemo(() => {
+    const list = stageTab === "All" ? searched : searched.filter((c) => c.status === stageTab);
+    if (sortBy === "default") return list;
+    const dir = sortBy === "score_desc" ? -1 : 1;
+    return [...list].sort((a, b) => {
+      const sa = aiScores[a.id]?.score;
+      const sb = aiScores[b.id]?.score;
+      if (sa == null && sb == null) return 0;
+      if (sa == null) return 1;
+      if (sb == null) return -1;
+      return (sa - sb) * dir;
+    });
+  }, [searched, stageTab, sortBy, aiScores]);
 
   // Fall back to the first visible candidate if nothing (valid) is selected.
   const active = visible.find((c) => c.id === selectedId) ?? visible[0] ?? null;
   const activeIndex = active ? visible.findIndex((c) => c.id === active.id) : -1;
+  const aiDetail = active ? (aiScores[active.id] ?? null) : null;
 
   // -- Tracking history for the open candidate -----------------------------
   useEffect(() => {
@@ -341,7 +430,7 @@ export const JobDetailPage: FC = () => {
   async function persistInterview() {
     if (!interviewPrompt) return;
     const { candidate, stage } = interviewPrompt;
-    
+
     const startLabel = interviewDateTime ? new Date(interviewDateTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
     const timeRange = interviewEndTime ? `${startLabel}–${interviewEndTime}` : startLabel;
     const notes = interviewDateTime ? `Time: ${timeRange}\n${interviewNotes.trim()}` : interviewNotes.trim();
@@ -465,7 +554,7 @@ export const JobDetailPage: FC = () => {
 
     try {
       await updateCandidateStatus(candidate.id, stage);
-      
+
       if (isInterviewStage(stage)) {
         enqueueInterviews([{ candidate, stage }]);
       } else {
@@ -476,7 +565,7 @@ export const JobDetailPage: FC = () => {
         });
         if (isHiredStage(stage)) enqueueOnboarding(candidate);
       }
-      
+
       setLogsVersion((v) => v + 1);
     } catch (err) {
       console.error("Failed to move candidate", err);
@@ -512,6 +601,29 @@ export const JobDetailPage: FC = () => {
     setView("profile");
   }
 
+  async function handleSaveEdit() {
+    if (!job || !editForm.job_title?.trim() || !editForm.job_description?.trim()) {
+      setEditError("Job title and description are required.");
+      return;
+    }
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      const updated = await updateJob(job.id, {
+        job_title: editForm.job_title.trim(),
+        job_description: editForm.job_description.trim(),
+        requirements: editForm.requirements?.trim() || null,
+      });
+      setJob(updated);
+      setIsEditing(false);
+    } catch (err) {
+      console.error("Failed to update job", err);
+      setEditError("Couldn't save changes. Please try again.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   function goPrev() {
     if (activeIndex > 0) setSelectedId(visible[activeIndex - 1].id);
   }
@@ -523,7 +635,6 @@ export const JobDetailPage: FC = () => {
   // -- Render -----------------------------------------------------------------
   return (
     <>
-
       <main className="mx-auto max-w-7xl px-6 py-6">
         {/* Breadcrumb + back */}
         <div className="mb-4 flex items-center gap-3 text-sm text-muted-foreground">
@@ -580,27 +691,100 @@ export const JobDetailPage: FC = () => {
                     </p>
                   </div>
 
-                  <div className="flex items-center rounded-lg border p-1">
+                  <div className="flex items-center gap-2">
                     <Button
                       size="sm"
-                      variant={view === "profile" ? "secondary" : "ghost"}
-                      className="gap-2"
-                      onClick={() => setView("profile")}
+                      variant="outline"
+                      onClick={() => {
+                        setIsEditing(true);
+                        setEditForm({ job_title: job.job_title, job_description: job.job_description || "", requirements: job.requirements || "" });
+                        setEditError(null);
+                      }}
                     >
-                      <ListIcon className="h-4 w-4" />
-                      Profile
+                      Edit Job
                     </Button>
-                    <Button
-                      size="sm"
-                      variant={view === "kanban" ? "secondary" : "ghost"}
-                      className="gap-2"
-                      onClick={() => setView("kanban")}
-                    >
-                      <LayoutGrid className="h-4 w-4" />
-                      Kanban
-                    </Button>
+                    <div className="flex items-center rounded-lg border p-1">
+                      <Button
+                        size="sm"
+                        variant={view === "profile" ? "secondary" : "ghost"}
+                        className="gap-2"
+                        onClick={() => setView("profile")}
+                      >
+                        <ListIcon className="h-4 w-4" />
+                        Profile
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={view === "kanban" ? "secondary" : "ghost"}
+                        className="gap-2"
+                        onClick={() => setView("kanban")}
+                      >
+                        <LayoutGrid className="h-4 w-4" />
+                        Kanban
+                      </Button>
+                    </div>
                   </div>
                 </div>
+
+                {/* Edit Form */}
+                {isEditing && (
+                  <div className="mt-6 rounded-lg border bg-card p-6">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-lg font-semibold">Edit Job</h3>
+                      <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>
+                        Cancel
+                      </Button>
+                    </div>
+                    {editError && (
+                      <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        {editError}
+                      </div>
+                    )}
+                    <div className="space-y-4">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Job Title</label>
+                        <Input
+                          value={editForm.job_title || ""}
+                          onChange={(e) => setEditForm({ ...editForm, job_title: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Job Description</label>
+                        <Textarea
+                          rows={6}
+                          value={editForm.job_description || ""}
+                          onChange={(e) => setEditForm({ ...editForm, job_description: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium">Requirements</label>
+                        <Textarea
+                          rows={4}
+                          value={editForm.requirements || ""}
+                          onChange={(e) => setEditForm({ ...editForm, requirements: e.target.value })}
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setIsEditing(false)}
+                          disabled={savingEdit}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={handleSaveEdit}
+                          disabled={savingEdit || !editForm.job_title?.trim() || !editForm.job_description?.trim()}
+                        >
+                          {savingEdit && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Save Changes
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <div className="relative w-full max-w-sm">
@@ -697,6 +881,22 @@ export const JobDetailPage: FC = () => {
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
                 {/* Candidate list */}
                 <Card className="flex h-[calc(100vh-22rem)] min-h-[420px] flex-col overflow-hidden">
+                  <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
+                    <span className="text-xs text-muted-foreground">{visible.length} candidates</span>
+                    <div className="flex items-center gap-1.5">
+                      <ArrowUpDown className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value as SortMode)}
+                        className="rounded-md border bg-background px-2 py-1 text-xs"
+                      >
+                        <option value="default">Default order</option>
+                        <option value="score_desc">AI score: high → low</option>
+                        <option value="score_asc">AI score: low → high</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="flex-1 overflow-y-auto">
                     {visible.length === 0 && (
                       <p className="px-4 py-10 text-center text-sm text-muted-foreground">
@@ -728,9 +928,16 @@ export const JobDetailPage: FC = () => {
                             Applied {c.applied_at ? new Date(c.applied_at).toLocaleDateString() : "—"}
                           </p>
                         </div>
-                        <Badge className={cn("shrink-0 border-0 text-[10px]", statusClass(c.status))}>
-                          {c.status}
-                        </Badge>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <Badge className={cn("border-0 text-[10px]", statusClass(c.status))}>
+                            {c.status}
+                          </Badge>
+                          {aiScores[c.id]?.score != null && (
+                            <span className="rounded border border-purple-400/60 bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-purple-600 dark:text-purple-400">
+                              {aiScores[c.id].score}/100
+                            </span>
+                          )}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -792,6 +999,12 @@ export const JobDetailPage: FC = () => {
                             <Badge className={cn("border-0 font-medium", statusClass(active.status))}>
                               {active.status}
                             </Badge>
+                            {aiDetail?.score != null && (
+                              <span className="inline-flex items-center gap-1 rounded-md border border-purple-400/60 bg-purple-500/10 px-2 py-0.5 text-xs font-semibold text-purple-600 dark:text-purple-400">
+                                <Sparkles className="h-3 w-3" />
+                                {aiDetail.score}/100
+                              </span>
+                            )}
                           </div>
                           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
@@ -810,6 +1023,9 @@ export const JobDetailPage: FC = () => {
                           </div>
                         </div>
                       </div>
+
+                      {/* AI summary (purple) */}
+                      <AiSummaryCard analysis={aiDetail} loading={loadingAi} />
 
                       <Tabs defaultValue="about" key={active.id}>
                         <TabsList className="mb-6">
@@ -1180,6 +1396,10 @@ export const JobDetailPage: FC = () => {
   );
 };
 
+// ---------------------------------------------------------------------------
+// Small components
+// ---------------------------------------------------------------------------
+
 const Info: FC<{ label: string; value: string | number }> = ({ label, value }) => (
   <div>
     <p className="text-muted-foreground">{label}</p>
@@ -1208,5 +1428,126 @@ const FilterSelect: FC<{
     </select>
   </div>
 );
+
+const RECOMMENDATION_LABEL: Record<NonNullable<AiAnalysis["recommendation"]>, string> = {
+  strong_fit: "Strong fit",
+  potential_fit: "Potential fit",
+  weak_fit: "Weak fit",
+};
+
+const AiSummaryCard: FC<{ analysis: AiAnalysis | null; loading: boolean }> = ({ analysis, loading }) => {
+  const shell = "mb-6 rounded-lg border border-purple-400/40 bg-purple-500/5 p-4";
+  const title = (
+    <div className="flex items-center gap-2 text-sm font-semibold text-purple-600 dark:text-purple-400">
+      <Sparkles className="h-4 w-4" /> AI Summary
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <div className={shell}>
+        {title}
+        <Loader2 className="mt-3 h-4 w-4 animate-spin text-purple-500" />
+      </div>
+    );
+  }
+  if (!analysis) {
+    return (
+      <div className={shell}>
+        {title}
+        <p className="mt-2 text-sm text-muted-foreground">No AI analysis for this candidate yet.</p>
+      </div>
+    );
+  }
+  if (analysis.status === "pending") {
+    return (
+      <div className={shell}>
+        {title}
+        <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-500" /> Analysis in progress…
+        </p>
+      </div>
+    );
+  }
+  if (analysis.status === "failed") {
+    return (
+      <div className={shell}>
+        {title}
+        <p className="mt-2 text-sm text-destructive">
+          Analysis failed{analysis.error ? `: ${analysis.error}` : "."}
+        </p>
+      </div>
+    );
+  }
+
+  const score = analysis.score ?? 0;
+  return (
+    <div className={shell}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {title}
+        <div className="flex items-center gap-2">
+          {analysis.recommendation && (
+            <span className="rounded-md bg-purple-500/15 px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-300">
+              {RECOMMENDATION_LABEL[analysis.recommendation]}
+            </span>
+          )}
+          <span className="rounded-md border border-purple-400/60 bg-purple-500/10 px-2 py-0.5 text-xs font-semibold text-purple-600 dark:text-purple-400">
+            {score}/100
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3 h-1.5 w-full rounded-full bg-purple-500/15">
+        <div
+          className="h-full rounded-full bg-purple-500"
+          style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
+        />
+      </div>
+
+      {analysis.summary && (
+        <p className="mt-3 whitespace-pre-line text-sm text-foreground/90">{analysis.summary}</p>
+      )}
+
+      {(analysis.strengths.length > 0 || analysis.concerns.length > 0) && (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {analysis.strengths.length > 0 && (
+            <div>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-purple-600 dark:text-purple-400">
+                Strengths
+              </p>
+              <ul className="space-y-1.5">
+                {analysis.strengths.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-500" />
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {analysis.concerns.length > 0 && (
+            <div>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                Concerns
+              </p>
+              <ul className="space-y-1.5">
+                {analysis.concerns.map((c, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                    <span>{c}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {analysis.model && (
+        <p className="mt-3 text-[10px] text-muted-foreground">Generated by {analysis.model}</p>
+      )}
+    </div>
+  );
+};
 
 export default JobDetailPage;

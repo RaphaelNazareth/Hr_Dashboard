@@ -125,11 +125,13 @@ export interface JobRecord {
   job_description: string | null;
   requirements: string | null;
   status: "Open" | "Closed";
+  country: string | null;
+  city: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export type NewJobInput = Pick<JobRecord, "job_title" | "job_description" | "requirements" | "status">;
+export type NewJobInput = Pick<JobRecord, "job_title" | "job_description" | "requirements" | "status" | "country" | "city">;
 
 export async function fetchJobs(): Promise<JobRecord[]> {
   const { data, error } = await supabase
@@ -151,6 +153,18 @@ export async function updateJobStatus(jobId: string, status: JobRecord["status"]
   const { data, error } = await supabase
     .from(JOBS_TABLE)
     .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", jobId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as JobRecord;
+}
+
+export async function updateJob(jobId: string, input: Partial<NewJobInput>): Promise<JobRecord> {
+  const { data, error } = await supabase
+    .from(JOBS_TABLE)
+    .update({ ...input, updated_at: new Date().toISOString() })
     .eq("id", jobId)
     .select()
     .single();

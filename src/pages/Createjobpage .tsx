@@ -6,7 +6,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ArrowDown, ArrowLeft, ArrowUp, Loader2, Lock, MapPin, Plus, Sparkles, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Loader2,
+  Lock,
+  MapPin,
+  Plus,
+  Sparkles,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createJob } from "@/lib/candidateBoard";
 import type { NewJobInput } from "@/lib/candidateBoard";
@@ -17,10 +28,14 @@ import {
   saveProcess,
   type HiringProcess,
 } from "@/lib/hiringProcesses";
+import { COUNTRIES, INDONESIAN_CITIES } from "@/pages/indonesiancities";
 
 // ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
+
+// Move to a Vite env var (import.meta.env.VITE_API_BASE) before deploying.
+const API_BASE = "http://127.0.0.1:8000";
 
 const JOB_TYPES = ["Permanent", "Contract", "Temporary", "Internship"];
 const WORKING_HOURS = ["Full-time", "Part-time", "Casual"];
@@ -46,7 +61,7 @@ interface JobForm {
 
 const EMPTY: JobForm = {
   job_title: "",
-  country: "",
+  country: "Indonesia",
   city: "",
   job_type: JOB_TYPES[0],
   working_hours: WORKING_HOURS[0],
@@ -76,12 +91,35 @@ function sameStages(a: StageDraft[], b: StageDraft[]) {
   );
 }
 
-// TODO(AI): wire this to your backend (e.g. the FastAPI + Gemini service).
-// Take the current form, return suggested description/requirements text.
+// ---------------------------------------------------------------------------
+// AI suggestions: POST /api/job-suggestions (job_suggestions.py on the backend)
+// ---------------------------------------------------------------------------
+
+type AiMode = "generate" | "rewrite";
+
 async function requestAiSuggestions(
-  _form: JobForm
-): Promise<{ job_description?: string; requirements?: string } | null> {
-  return null;
+  form: JobForm,
+  mode: AiMode
+): Promise<{ job_description: string; requirements: string }> {
+  const res = await fetch(`${API_BASE}/api/job-suggestions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mode,
+      job_title: form.job_title.trim(),
+      industry: form.industry,
+      experience_level: form.experience_level,
+      job_type: form.job_type,
+      working_hours: form.working_hours,
+      workplace_type: form.workplace_type,
+      city: form.city,
+      country: form.country,
+      job_description: form.job_description.trim(),
+      requirements: form.requirements.trim(),
+    }),
+  });
+  if (!res.ok) throw new Error(`AI request failed (${res.status})`);
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +132,8 @@ export const CreateJobPage: FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNote, setAiNote] = useState<string | null>(null);
+  // What the form held before the AI replaced it, so the HR can undo.
+  const [aiUndo, setAiUndo] = useState<{ job_description: string; requirements: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Hiring stages: pick a saved process as a starting point, then tweak freely.
@@ -107,6 +147,10 @@ export const CreateJobPage: FC = () => {
 
   function set<K extends keyof JobForm>(key: K, value: JobForm[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function setCountry(country: string) {
+    setForm((prev) => ({ ...prev, country, city: "" }));
   }
 
   // -- Stage editing ---------------------------------------------------------
@@ -144,26 +188,43 @@ export const CreateJobPage: FC = () => {
   }
 
   // -- AI --------------------------------------------------------------------
+  // Nothing written yet -> "generate". Anything written -> "rewrite".
+  // The backend prompt ignores the draft if it is gibberish and generates anyway.
+  const hasDraft = !!(form.job_description.trim() || form.requirements.trim());
+  const aiMode: AiMode = hasDraft ? "rewrite" : "generate";
+  const canUseAi = !!form.job_title.trim();
+
   async function handleAi() {
+    if (!canUseAi || aiLoading) return;
     setAiLoading(true);
     setAiNote(null);
     try {
-      const res = await requestAiSuggestions(form);
-      if (!res) {
-        setAiNote("AI suggestions aren't connected yet.");
+      const res = await requestAiSuggestions(form, aiMode);
+      const nextDescription = res.job_description?.trim();
+      const nextRequirements = res.requirements?.trim();
+      if (!nextDescription && !nextRequirements) {
+        setAiNote("The AI returned an empty answer. Try again.");
         return;
       }
+      setAiUndo({ job_description: form.job_description, requirements: form.requirements });
       setForm((prev) => ({
         ...prev,
-        job_description: res.job_description ?? prev.job_description,
-        requirements: res.requirements ?? prev.requirements,
+        job_description: nextDescription || prev.job_description,
+        requirements: nextRequirements || prev.requirements,
       }));
     } catch (err) {
       console.error(err);
-      setAiNote("Couldn't get suggestions. Try again.");
+      setAiNote("Couldn't reach the AI. Check that the backend is running, then try again.");
     } finally {
       setAiLoading(false);
     }
+  }
+
+  function undoAi() {
+    if (!aiUndo) return;
+    setForm((prev) => ({ ...prev, ...aiUndo }));
+    setAiUndo(null);
+    setAiNote(null);
   }
 
   // -- Submit ----------------------------------------------------------------
@@ -206,10 +267,9 @@ export const CreateJobPage: FC = () => {
         job_description: form.job_description.trim(),
         requirements: form.requirements.trim() || null,
         status: "Open",
-        hiring_process_id: hiringProcessId, // needs the column + NewJobInput field
-        // TODO: add these columns to public.jobs + NewJobInput, then uncomment:
-        // country: form.country || null,
-        // city: form.city || null,
+        hiring_process_id: hiringProcessId,
+        country: form.country || null,
+        city: form.city || null,
         // job_type: form.job_type,
         // working_hours: form.working_hours,
         // experience_level: form.experience_level,
@@ -231,6 +291,14 @@ export const CreateJobPage: FC = () => {
 
   const location = [form.city, form.country].filter(Boolean).join(", ");
   const hasPay = !!(form.pay_min || form.pay_max);
+
+  const aiButtonLabel = aiLoading
+    ? aiMode === "rewrite"
+      ? "Rewriting…"
+      : "Generating…"
+    : aiMode === "rewrite"
+      ? "Rewrite with AI"
+      : "Generate with AI";
 
   return (
     <>
@@ -264,12 +332,25 @@ export const CreateJobPage: FC = () => {
                   />
                 </Field>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Country">
-                    <Input value={form.country} onChange={(e) => set("country", e.target.value)} />
-                  </Field>
-                  <Field label="City / Suburb">
-                    <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
-                  </Field>
+                  <SelectField
+                    label="Country"
+                    value={form.country}
+                    options={COUNTRIES}
+                    onChange={setCountry}
+                  />
+                  {form.country === "Indonesia" ? (
+                    <SelectField
+                      label="City / Suburb"
+                      value={form.city}
+                      options={INDONESIAN_CITIES}
+                      placeholder="Select city"
+                      onChange={(v) => set("city", v)}
+                    />
+                  ) : (
+                    <Field label="City / Suburb">
+                      <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
+                    </Field>
+                  )}
                 </div>
               </Section>
 
@@ -368,13 +449,34 @@ export const CreateJobPage: FC = () => {
               <Section
                 title="Job description"
                 action={
-                  <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={handleAi} disabled={aiLoading}>
-                    {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                    AI suggestions
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {aiUndo && !aiLoading && (
+                      <Button type="button" size="sm" variant="ghost" className="gap-1.5" onClick={undoAi}>
+                        <Undo2 className="h-3.5 w-3.5" /> Undo
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5 border-purple-400/60 bg-purple-500/10 text-purple-700 hover:bg-purple-500/20 dark:text-purple-300"
+                      onClick={handleAi}
+                      disabled={aiLoading || !canUseAi}
+                    >
+                      {aiLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      {aiButtonLabel}
+                    </Button>
+                  </div>
                 }
               >
-                {aiNote && <p className="text-xs text-muted-foreground">{aiNote}</p>}
+                {!canUseAi && (
+                  <p className="text-xs text-muted-foreground">Enter a job title to use AI.</p>
+                )}
+                {aiNote && <p className="text-xs text-destructive">{aiNote}</p>}
                 <Field label="Summary & responsibilities" required>
                   <Textarea
                     rows={8}
@@ -534,10 +636,11 @@ const Field: FC<{ label: string; required?: boolean; children: ReactNode }> = ({
   </div>
 );
 
-const SelectField: FC<{ label: string; value: string; options: string[]; onChange: (v: string) => void }> = ({
+const SelectField: FC<{ label: string; value: string; options: string[]; placeholder?: string; onChange: (v: string) => void }> = ({
   label,
   value,
   options,
+  placeholder,
   onChange,
 }) => (
   <Field label={label}>
@@ -546,6 +649,7 @@ const SelectField: FC<{ label: string; value: string; options: string[]; onChang
       onChange={(e) => onChange(e.target.value)}
       className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
+      {placeholder && <option value="">{placeholder}</option>}
       {options.map((o) => (
         <option key={o} value={o}>
           {o}
