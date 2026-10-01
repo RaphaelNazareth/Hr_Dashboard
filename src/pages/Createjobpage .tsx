@@ -247,37 +247,17 @@ export const CreateJobPage: FC = () => {
     setSubmitting(true);
     setError(null);
     try {
-      // Reuse the selected process if untouched, keep null if it's the untouched
-      // default pipeline, otherwise save these stages as a new process for this job.
-      const selected = processes.find((p) => p.id === processId);
-      let hiringProcessId: string | null;
-      if (selected && sameStages(selected.stages, stages)) {
-        hiringProcessId = selected.id;
-      } else if (!selected && sameStages(initialStages(), stages)) {
-        hiringProcessId = null;
-      } else {
-        hiringProcessId = await saveProcess({
-          name: `${form.job_title.trim()} pipeline`,
-          stages: stages.map((s) => ({ name: s.name.trim(), is_interview: s.is_interview })),
-        });
-      }
-
+      // Note: The hiring process logic has been commented out since 
+      // hiring_process_id is not part of the current job schema.
+      // Uncomment and implement when the schema supports it.
+      
       const payload: NewJobInput = {
         job_title: form.job_title.trim(),
         job_description: form.job_description.trim(),
         requirements: form.requirements.trim() || null,
         status: "Open",
-        hiring_process_id: hiringProcessId,
         country: form.country || null,
         city: form.city || null,
-        // job_type: form.job_type,
-        // working_hours: form.working_hours,
-        // experience_level: form.experience_level,
-        // industry: form.industry,
-        // workplace_type: form.workplace_type,
-        // pay_min: form.pay_min ? Number(form.pay_min) : null,
-        // pay_max: form.pay_max ? Number(form.pay_max) : null,
-        // pay_visible: form.pay_visible,
       };
       await createJob(payload);
       navigate("/jobs");

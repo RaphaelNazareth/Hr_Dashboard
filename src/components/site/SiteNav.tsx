@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Menu, X, ArrowUpRight, User, Settings } from "lucide-react";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Wordmark } from "./Wordmark";
 import { Button } from "@/components/ui/button";
 import { LanguageToggle } from "@/components/LanguageToggle";

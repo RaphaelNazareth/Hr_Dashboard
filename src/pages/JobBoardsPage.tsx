@@ -1,10 +1,9 @@
 import { type FC, useEffect, useMemo, useState, useCallback } from "react";
-import { CalendarClock, Clock, CheckCircle, XCircle, MoreVertical, Trash2, UserPlus, Search, RotateCcw } from "lucide-react";
+import { Clock, CheckCircle, Trash2, UserPlus, RotateCcw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +14,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { PageWrapper, PageSection } from "@/components/PageWrapper";
-import { cn } from "@/lib/utils";
 
 interface OnboardingTask {
   id: string;
@@ -115,7 +113,7 @@ export const JobBoardsPage: FC = () => {
         .eq("id", taskId);
 
       if (error) throw error;
-      loadOnboardingTasks();
+      void loadOnboardingTasks();
     } catch (err) {
       console.error("Failed to complete task", err);
       setError("Couldn't update task status.");
@@ -130,7 +128,7 @@ export const JobBoardsPage: FC = () => {
         .eq("id", taskId);
 
       if (error) throw error;
-      loadOnboardingTasks();
+      void loadOnboardingTasks();
     } catch (err) {
       console.error("Failed to reset task", err);
       setError("Couldn't reset task status.");
@@ -144,21 +142,10 @@ export const JobBoardsPage: FC = () => {
       const { error } = await supabase.from("onboarding_tasks").delete().eq("id", taskId);
 
       if (error) throw error;
-      loadOnboardingTasks();
+      void loadOnboardingTasks();
     } catch (err) {
       console.error("Failed to delete task", err);
       setError("Couldn't delete task.");
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
-      case "cancelled":
-        return "bg-red-500/10 text-red-600 dark:text-red-400";
-      default:
-        return "bg-amber-500/10 text-amber-600 dark:text-amber-400";
     }
   };
 
@@ -410,7 +397,7 @@ const OnboardDialog: FC<{
     setErr(null);
   };
 
-  const buildEndIso = (date: string, time: string, endTimeStr: string) => {
+  const buildEndIso = (date: string, endTimeStr: string) => {
     if (!date || !endTimeStr) return null;
     const d = new Date(date);
     const [h, m] = endTimeStr.split(":").map(Number);
@@ -429,7 +416,7 @@ const OnboardDialog: FC<{
         candidate_id: selected.id,
         title: title.trim(),
         start_time: startDateTime.toISOString(),
-        end_time: buildEndIso(startDate, startTime, endTime),
+        end_time: buildEndIso(startDate, endTime),
         notes: notes.trim() || null,
         status: "scheduled",
       });

@@ -1,5 +1,5 @@
 import { type FC } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 const TABS = [

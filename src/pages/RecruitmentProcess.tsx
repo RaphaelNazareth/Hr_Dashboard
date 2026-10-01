@@ -248,6 +248,7 @@ export const RecruitmentBoard: FC = () => {
   // Scroll slider state for horizontal pipeline scrolling
   const [scrollValue, setScrollValue] = useState(0);
   const [scrollMax, setScrollMax] = useState(0);
+  const pipelineScrollRef = useRef<HTMLDivElement>(null);
 
   // Bulk selection state — shared across every stage.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

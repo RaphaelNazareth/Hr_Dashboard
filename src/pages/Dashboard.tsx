@@ -15,7 +15,6 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { isInterviewStage } from '@/lib/candidateBoard';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -53,10 +52,10 @@ interface OnboardingRow {
   candidate_id: string;
   title: string;
   start_time: string;
-  candidates?: {
+  candidates: {
     first_name: string;
     last_name: string;
-  };
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +104,17 @@ function useDashboardData() {
       setJobs((jobsRes.data as JobRow[]) ?? []);
       setCandidates((candRes.data as CandidateRow[]) ?? []);
       setInterviews((ivRes.data as InterviewRow[]) ?? []);
-      setOnboarding((onbRes.data as OnboardingRow[]) ?? []);
+      
+      // Transform onboarding data to match OnboardingRow type
+      const onboardingData = (onbRes.data ?? []).map((item: any) => ({
+        id: item.id,
+        candidate_id: item.candidate_id,
+        title: item.title,
+        start_time: item.start_time,
+        candidates: Array.isArray(item.candidates) ? (item.candidates[0] ?? null) : (item.candidates ?? null),
+      }));
+      setOnboarding(onboardingData as OnboardingRow[]);
+      
       setLoading(false);
     })();
     return () => {

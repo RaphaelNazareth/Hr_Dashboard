@@ -11,7 +11,7 @@ import {
   saveProcess,
   type HiringProcess,
   type ProcessDraft,
-} from "@/lib/Hiringprocesses";
+} from "@/lib/hiringProcesses";
 
 const NEW_DRAFT: ProcessDraft = {
   name: "",

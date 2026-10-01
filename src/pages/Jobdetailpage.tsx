@@ -241,12 +241,17 @@ export const JobDetailPage: FC = () => {
     if (!jobId) return;
     let cancelled = false;
     setLoadingAi(true);
-    supabase
-      .from("candidate_ai_analyses")
-      .select("*")
-      .eq("job_id", jobId)
-      .then(({ data }) => {
+    
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("candidate_ai_analyses")
+          .select("*")
+          .eq("job_id", jobId);
+        
+        if (error) throw error;
         if (cancelled || !data) return;
+        
         const map: Record<string, AiAnalysis> = {};
         for (const row of data) {
           const r = row as any;
@@ -257,10 +262,13 @@ export const JobDetailPage: FC = () => {
           };
         }
         setAiScores(map);
-      })
-      .finally(() => {
+      } catch (error) {
+        console.error("Error loading AI scores:", error);
+      } finally {
         if (!cancelled) setLoadingAi(false);
-      });
+      }
+    })();
+    
     return () => {
       cancelled = true;
     };
