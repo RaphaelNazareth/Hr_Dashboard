@@ -25,9 +25,8 @@ import {
   LOCKED_STAGES,
   defaultStages,
   fetchProcesses,
-  saveProcess,
   type HiringProcess,
-} from "@/lib/hiringProcesses";
+} from "@/lib/Hiringprocesses";
 import { COUNTRIES, INDONESIAN_CITIES } from "@/pages/indonesiancities";
 
 // ---------------------------------------------------------------------------
@@ -81,14 +80,7 @@ interface StageDraft {
 }
 
 function initialStages(): StageDraft[] {
-  return defaultStages().map(({ name, is_interview }) => ({ name, is_interview }));
-}
-
-function sameStages(a: StageDraft[], b: StageDraft[]) {
-  return (
-    a.length === b.length &&
-    a.every((s, i) => s.name.trim() === b[i].name.trim() && s.is_interview === b[i].is_interview)
-  );
+  return defaultStages().map(({ name, is_interview }: { name: string; is_interview: boolean }) => ({ name, is_interview }));
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +134,7 @@ export const CreateJobPage: FC = () => {
   const [stages, setStages] = useState<StageDraft[]>(initialStages());
 
   useEffect(() => {
-    fetchProcesses().then(setProcesses).catch((err) => console.error("Failed to load processes", err));
+    fetchProcesses().then(setProcesses).catch((err: any) => console.error("Failed to load processes", err));
   }, []);
 
   function set<K extends keyof JobForm>(key: K, value: JobForm[K]) {
@@ -158,7 +150,7 @@ export const CreateJobPage: FC = () => {
     setProcessId(id);
     const p = processes.find((x) => x.id === id);
     setStages(
-      p ? p.stages.map(({ name, is_interview }) => ({ name, is_interview })) : initialStages()
+      p ? p.stages.map(({ name, is_interview }: { name: string; is_interview: boolean }) => ({ name, is_interview })) : initialStages()
     );
   }
 
